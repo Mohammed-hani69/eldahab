@@ -207,7 +207,7 @@
 </style>
 
 <script>
-let rowIndex = {{ purchase.items|length if purchase and purchase.items else 0 }} - 1;
+    let rowIndex = {{ purchase.items|length if purchase and purchase.items else 1 }} - 1;
 let activeDropdown = null;
 let activeIndex = -1;
 

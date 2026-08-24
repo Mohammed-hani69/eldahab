@@ -30,10 +30,22 @@
     </div>
 
     <div style="padding:16px;">
+        {% if dues_info %}
+        <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 14px;margin-bottom:8px;font-size:0.85rem;">
+            <span style="color:var(--text-secondary);"><i class="fas fa-clock-rotate-left" style="margin-left:4px;"></i> آخر المستحقات (قبل هذه الدفعة)</span>
+            <span style="font-weight:800;">{{ "{:,.0f}".format(dues_info.before) }} ج.م</span>
+        </div>
+        {% endif %}
         <div class="grand-total" style="background:linear-gradient(135deg,var(--navy),#253d5c);">
             <span class="total-label" style="color:#fff;">{{ amount_label }}</span>
             <span class="total-value" style="color:var(--gold);">{{ "{:,.0f}".format(amount or 0) }} ج.م</span>
         </div>
+        {% if dues_info %}
+        <div style="display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,#dc3545,#c82333);border-radius:8px;padding:10px 14px;margin-top:8px;color:#fff;font-size:0.9rem;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+            <span><i class="fas fa-exclamation-triangle" style="margin-left:4px;"></i> المتبقي على العميل بعد الدفعة</span>
+            <span style="font-weight:900;">{{ "{:,.0f}".format(dues_info.after if dues_info.after > 0 else 0) }} ج.م</span>
+        </div>
+        {% endif %}
     </div>
 
     <div class="compact-payment-bar" style="border-top:1px solid var(--border);padding:10px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">

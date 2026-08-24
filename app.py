@@ -806,13 +806,10 @@ def invoice_add():
         db.session.add(inv)
         db.session.flush()
         total = 0
-        i = 0
-        while True:
-            iname = request.form.get(f'item_name_{i}', '')
+        indices = sorted({int(k.rsplit('_', 1)[1]) for k in request.form if k.startswith('item_name_')})
+        for i in indices:
+            iname = request.form.get(f'item_name_{i}', '').strip()
             if not iname:
-                i += 1
-                if i > 350:
-                    break
                 continue
             qty = float(request.form.get(f'item_qty_{i}', 0))
             price = float(request.form.get(f'item_price_{i}', 0))
@@ -828,9 +825,6 @@ def invoice_add():
             )
             db.session.add(item)
             total += item_total
-            i += 1
-            if i > 350:
-                break
         inv.total = total
         discount = float(request.form.get('discount', 0) or 0)
         inv.discount = discount
@@ -921,13 +915,10 @@ def invoice_edit(invoice_id):
         InvoiceItem.query.filter_by(invoice_id=inv.id).delete()
 
         total = 0
-        i = 0
-        while True:
-            iname = request.form.get(f'item_name_{i}', '')
+        indices = sorted({int(k.rsplit('_', 1)[1]) for k in request.form if k.startswith('item_name_')})
+        for i in indices:
+            iname = request.form.get(f'item_name_{i}', '').strip()
             if not iname:
-                i += 1
-                if i > 350:
-                    break
                 continue
             qty = float(request.form.get(f'item_qty_{i}', 0))
             price = float(request.form.get(f'item_price_{i}', 0))
@@ -943,9 +934,6 @@ def invoice_edit(invoice_id):
             )
             db.session.add(item)
             total += item_total
-            i += 1
-            if i > 350:
-                break
         inv.total = total
         discount = float(request.form.get('discount', 0) or 0)
         inv.discount = discount
@@ -1011,23 +999,35 @@ def invoice_view(invoice_id):
     installment_payments = installment_plan.payments if installment_plan else []
     cust_id = inv.customer_id
     cust_balance_invs = Invoice.query.filter(Invoice.customer_id == cust_id).all()
+    # استعلام مجمّع واحد لمدفوعات كل فواتير العميل
+    bal_ids = [bi.id for bi in cust_balance_invs]
+    paid_map = dict(db.session.query(
+        Payment.invoice_id,
+        func.coalesce(func.sum(Payment.amount), 0)
+    ).filter(Payment.invoice_id.in_(bal_ids)).group_by(Payment.invoice_id).all()) if bal_ids else {}
     cust_balance_total = 0
     cust_balance_list = []
+    this_inv_rem = 0
     for bi in cust_balance_invs:
-        paid_for_inv = db.session.query(db.func.coalesce(db.func.sum(Payment.amount), 0)).filter(Payment.invoice_id == bi.id).scalar()
+        paid_for_inv = paid_map.get(bi.id, 0) or 0
         net = max(0, (bi.total or 0) - (bi.discount or 0))
         rem = max(0, net - paid_for_inv)
+        if bi.id == inv.id:
+            this_inv_rem = rem
         if rem > 0:
             cust_balance_total += rem
             cust_balance_list.append({
                 'number': bi.invoice_number, 'total': net,
                 'paid': paid_for_inv, 'remaining': rem
             })
+    # اخر مستحقات على العميل قبل هذه الفاتورة
+    previous_dues = max(0, round(cust_balance_total - this_inv_rem, 2))
     return render_template('invoice_view.html', invoice=inv,
         return_items=return_items, return_amount=return_amount,
         installment_plan=installment_plan, installments=installments,
         installment_payments=installment_payments, PAYMENT_TYPES=PAYMENT_TYPES,
-        cust_balance_total=cust_balance_total, cust_balance_list=cust_balance_list)
+        cust_balance_total=cust_balance_total, cust_balance_list=cust_balance_list,
+        previous_dues=previous_dues)
 
 
 @app.route('/invoices/<int:invoice_id>/delete', methods=['POST'])
@@ -1175,13 +1175,10 @@ def return_add(customer_id):
         db.session.add(r)
         db.session.flush()
         total = 0
-        i = 0
-        while True:
-            iname = request.form.get(f'item_name_{i}', '')
+        indices = sorted({int(k.rsplit('_', 1)[1]) for k in request.form if k.startswith('item_name_')})
+        for i in indices:
+            iname = request.form.get(f'item_name_{i}', '').strip()
             if not iname:
-                i += 1
-                if i > 50:
-                    break
                 continue
             qty = float(request.form.get(f'item_qty_{i}', 0))
             price = float(request.form.get(f'item_price_{i}', 0))
@@ -1197,9 +1194,6 @@ def return_add(customer_id):
             )
             db.session.add(ri)
             total += item_total
-            i += 1
-            if i > 50:
-                break
         r.total_amount = total
         db.session.commit()
         flash('تم تسجيل المرتجع بنجاح', 'success')
@@ -1219,13 +1213,10 @@ def return_edit(customer_id, return_id):
         ReturnItem.query.filter_by(return_id=r.id).delete()
         db.session.flush()
         total = 0
-        i = 0
-        while True:
-            iname = request.form.get(f'item_name_{i}', '')
+        indices = sorted({int(k.rsplit('_', 1)[1]) for k in request.form if k.startswith('item_name_')})
+        for i in indices:
+            iname = request.form.get(f'item_name_{i}', '').strip()
             if not iname:
-                i += 1
-                if i > 50:
-                    break
                 continue
             qty = float(request.form.get(f'item_qty_{i}', 0))
             price = float(request.form.get(f'item_price_{i}', 0))
@@ -1241,9 +1232,6 @@ def return_edit(customer_id, return_id):
             )
             db.session.add(ri)
             total += item_total
-            i += 1
-            if i > 50:
-                break
         r.total_amount = total
         db.session.commit()
         flash('تم تعديل المرتجع بنجاح', 'success')
@@ -1641,13 +1629,10 @@ def purchase_add():
         db.session.add(p)
         db.session.flush()
         total = 0
-        i = 0
-        while True:
-            iname = request.form.get(f'item_name_{i}', '')
+        indices = sorted({int(k.rsplit('_', 1)[1]) for k in request.form if k.startswith('item_name_')})
+        for i in indices:
+            iname = request.form.get(f'item_name_{i}', '').strip()
             if not iname:
-                i += 1
-                if i > 350:
-                    break
                 continue
             qty = float(request.form.get(f'item_qty_{i}', 0))
             price = float(request.form.get(f'item_price_{i}', 0))
@@ -1665,9 +1650,6 @@ def purchase_add():
             )
             db.session.add(item)
             total += item_total
-            i += 1
-            if i > 350:
-                break
         p.total = total
 
         if payment_type == 'cash':
@@ -1767,13 +1749,10 @@ def purchase_edit(purchase_id):
         PurchaseItem.query.filter_by(purchase_id=p.id).delete()
 
         total = 0
-        i = 0
-        while True:
-            iname = request.form.get(f'item_name_{i}', '')
+        indices = sorted({int(k.rsplit('_', 1)[1]) for k in request.form if k.startswith('item_name_')})
+        for i in indices:
+            iname = request.form.get(f'item_name_{i}', '').strip()
             if not iname:
-                i += 1
-                if i > 350:
-                    break
                 continue
             qty = float(request.form.get(f'item_qty_{i}', 0))
             price = float(request.form.get(f'item_price_{i}', 0))
@@ -1791,9 +1770,6 @@ def purchase_edit(purchase_id):
             )
             db.session.add(item)
             total += item_total
-            i += 1
-            if i > 350:
-                break
         p.total = total
 
         payments_total = db.session.query(
@@ -1887,6 +1863,8 @@ def purchase_delete(purchase_id):
 def payment_receipt(payment_id):
     p = Payment.query.get_or_404(payment_id)
     c = p.customer
+    bal_now = c.balance()
+    dues_info = {'before': bal_now + p.amount, 'after': bal_now}
     return render_template('payment_receipt.html',
         doc_title='ايصال استلام دفعة',
         doc_number='RCV-%06d' % p.id,
@@ -1901,7 +1879,8 @@ def payment_receipt(payment_id):
         remaining_value=c.balance(),
         notes=p.notes,
         receipt_image=p.receipt_image,
-        creator=p.creator)
+        creator=p.creator,
+        dues_info=dues_info)
 
 
 @app.route('/installment-payments/<int:payment_id>/receipt')
@@ -1910,6 +1889,8 @@ def installment_payment_receipt(payment_id):
     p = InstallmentPayment.query.get_or_404(payment_id)
     plan = p.plan
     c = plan.customer
+    bal_now = c.balance()
+    dues_info = {'before': bal_now + p.amount, 'after': bal_now}
     return render_template('payment_receipt.html',
         doc_title='ايصال استلام قسط',
         doc_number='INS-%06d' % p.id,
@@ -1924,7 +1905,8 @@ def installment_payment_receipt(payment_id):
         remaining_value=plan.remaining,
         notes=p.notes,
         receipt_image=p.receipt_image,
-        creator=p.creator)
+        creator=p.creator,
+        dues_info=dues_info)
 
 
 @app.route('/supplier-payments/<int:payment_id>/receipt')

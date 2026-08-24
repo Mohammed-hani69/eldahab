@@ -121,6 +121,37 @@
 
     <div style="padding:0 16px 14px;">
         {% set show_bal = invoice.show_balance and cust_balance_total > 0 %}
+        {% set inv_net = (invoice.total or 0) - (invoice.discount or 0) %}
+        {% if show_bal %}
+            {% if invoice.discount and invoice.discount > 0 %}
+            <div style="display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,var(--navy),#253d5c);border-radius:8px;padding:10px 16px;color:#fff;font-size:0.82rem;width:100%;margin-bottom:6px;">
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <span style="opacity:0.7;">الاجمالي</span>
+                    <span style="font-weight:700;text-decoration:line-through;opacity:0.7;">{{ "{:,.0f}".format(invoice.total or 0) }} ج.م</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;color:#fbb;">
+                    <i class="fas fa-percentage" style="font-size:0.7rem;"></i>
+                    <span style="font-weight:700;">{{ "{:,.0f}".format(invoice.discount) }} ج.م</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <span style="opacity:0.7;">الصافي</span>
+                    <span style="font-size:1rem;font-weight:900;color:var(--gold);">{{ "{:,.0f}".format(inv_net) }} ج.م</span>
+                </div>
+            </div>
+            {% endif %}
+            <div class="grand-total compact-total" style="margin-top:0;">
+                <span class="total-label"><i class="fas fa-clock-rotate-left" style="margin-left:4px;"></i> آخر المستحقات (قبل هذه الفاتورة)</span>
+                <span class="total-value">{{ "{:,.0f}".format(previous_dues) }} ج.م</span>
+            </div>
+            <div class="grand-total compact-total" style="background:linear-gradient(135deg,var(--navy),#253d5c);margin-top:6px;">
+                <span class="total-label">اجمالي الفاتورة</span>
+                <span class="total-value">{{ "{:,.0f}".format(inv_net) }} ج.م</span>
+            </div>
+            <div class="grand-total compact-total" style="background:linear-gradient(135deg,#dc3545,#c82333);margin-top:6px;">
+                <span class="total-label"><i class="fas fa-exclamation-triangle" style="margin-left:4px;"></i> الاجمالي الكلي المطلوب</span>
+                <span class="total-value">{{ "{:,.0f}".format(previous_dues + inv_net) }} ج.م</span>
+            </div>
+        {% else %}
         <div style="{% if show_bal %}display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;{% endif %}">
             <div style="{% if show_bal %}flex:1;min-width:220px;display:flex;{% endif %}">
                 {% if invoice.discount and invoice.discount > 0 %}
@@ -135,7 +166,7 @@
                     </div>
                     <div style="display:flex;align-items:center;gap:6px;">
                         <span style="opacity:0.7;">الصافي</span>
-                        <span style="font-size:1rem;font-weight:900;color:var(--gold);">{{ "{:,.0f}".format((invoice.total or 0) - (invoice.discount or 0)) }} ج.م</span>
+                        <span style="font-size:1rem;font-weight:900;color:var(--gold);">{{ "{:,.0f}".format(inv_net) }} ج.م</span>
                     </div>
                 </div>
                 {% else %}
@@ -145,15 +176,8 @@
                 </div>
                 {% endif %}
             </div>
-            {% if show_bal %}
-            <div style="flex:1;min-width:220px;display:flex;">
-                <div class="grand-total compact-total" style="background:linear-gradient(135deg,#dc3545,#c82333);margin-top:0;flex:1;">
-                    <span class="total-label"><i class="fas fa-exclamation-triangle" style="margin-left:4px;"></i> اجمالي المستحق على العميل</span>
-                    <span class="total-value">{{ "{:,.0f}".format(cust_balance_total) }} ج.م</span>
-                </div>
-            </div>
-            {% endif %}
         </div>
+        {% endif %}
         {% if return_amount > 0 %}
         <div class="grand-total compact-total" style="background:linear-gradient(135deg,#dc3545,#c82333);margin-top:6px;">
             <span class="total-label">اجمالي المرتجعات</span>
