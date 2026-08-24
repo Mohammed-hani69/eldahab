@@ -217,6 +217,9 @@
                 </a>
                 {% endif %}
                 <div style="border-top: 1px solid rgba(255,255,255,0.1); margin: 12px 0;"></div>
+                <a href="{{ url_for('user_guide') }}" class="nav-link {% if request.endpoint == 'user_guide' %}active{% endif %}">
+                    <span class="icon"><i class="fas fa-book"></i></span> دليل الاستخدام
+                </a>
                 <div class="nav-section">
                     <i class="fas fa-user-circle"></i>
                     {{ current_user.full_name or current_user.username if current_user else '' }}

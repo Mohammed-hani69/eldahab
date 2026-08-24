@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+    .guide-layout { display: flex; gap: 20px; align-items: flex-start; }
+    .guide-main { flex: 1; min-width: 0; }
+    .guide-toc {
+        position: sticky; top: 16px; width: 230px; flex-shrink: 0;
+        background: var(--navy-dark); border-radius: 14px; padding: 16px;
+        max-height: calc(100vh - 40px); overflow-y: auto;
+    }
+    .guide-toc h3 { color: var(--gold); font-size: 0.95rem; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+    .guide-toc a {
+        display: block; color: rgba(255,255,255,0.75); text-decoration: none;
+        padding: 7px 10px; border-radius: 8px; font-size: 0.85rem; transition: all 0.2s;
+    }
+    .guide-toc a:hover { background: rgba(255,255,255,0.08); color: var(--gold); }
+    .guide-section {
+        background: #fff; border-radius: 14px; padding: 22px 24px; margin-bottom: 18px;
+        box-shadow: 0 1px 4px rgba(26,54,91,0.07);
+        border-right: 4px solid var(--gold); scroll-margin-top: 70px;
+    }
+    .guide-section h2 {
+        font-size: 1.15rem; font-weight: 800; color: var(--navy); margin: 0 0 6px;
+        display: flex; align-items: center; gap: 10px;
+    }
+    .guide-section h2 .g-icon {
+        width: 38px; height: 38px; border-radius: 10px; background: var(--gold-glow);
+        color: var(--gold); display: inline-flex; align-items: center; justify-content: center; font-size: 1rem;
+    }
+    .guide-section p.desc { color: var(--text-secondary); font-size: 0.9rem; margin: 0 0 14px; }
+    .step-list { margin: 0; padding: 0; list-style: none; counter-reset: step; }
+    .step-list li {
+        counter-increment: step; position: relative; padding-right: 42px;
+        margin-bottom: 10px; font-size: 0.92rem; color: var(--text); line-height: 1.7;
+    }
+    .step-list li::before {
+        content: counter(step); position: absolute; right: 0; top: 3px;
+        width: 26px; height: 26px; border-radius: 50%; background: var(--navy);
+        color: #fff; font-size: 0.78rem; font-weight: 700;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .tip-box, .warn-box {
+        border-radius: 10px; padding: 12px 14px; margin-top: 12px;
+        font-size: 0.86rem; line-height: 1.7; display: flex; gap: 10px; align-items: flex-start;
+    }
+    .tip-box { background: var(--gold-glow); border: 1px solid rgba(207,163,64,0.35); color: #7a5d1e; }
+    .warn-box { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+    .info-box { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+    .tip-box i, .warn-box i, .info-box i { margin-top: 3px; }
+    .kbd-tag {
+        background: var(--navy); color: #fff; border-radius: 6px; padding: 1px 8px;
+        font-size: 0.8rem; white-space: nowrap; display: inline-block;
+    }
+    .doc-num { font-weight: 700; direction: ltr; unicode-bidi: embed; }
+
+    @media (max-width: 900px) {
+        .guide-layout { flex-direction: column; }
+        .guide-toc { position: static; width: 100%; max-height: none; }
+    }
+    @media print {
+        .sidebar, .mobile-topbar, .sidebar-overlay, .no-print, .guide-toc { display: none !important; }
+        .main-content { margin: 0 !important; }
+        .guide-section { break-inside: avoid; box-shadow: none; border: 1px solid #ddd; }
+        body { background: #fff; }
+    }
+</style>
+
+<div class="page-header no-print">
+    <h1 style="font-size:1.3rem;font-weight:700;color:var(--text);margin:0;"><i class="fas fa-book" style="margin-left:8px;color:var(--gold);"></i> دليل الاستخدام الكامل</h1>
+    <button onclick="window.print()" class="btn btn-ghost"><i class="fas fa-print" style="margin-left:4px;"></i> طباعة الدليل</button>
+</div>
+
+<div class="guide-layout">
+    <aside class="guide-toc no-print">
+        <h3><i class="fas fa-list-ul"></i> المحتويات</h3>
+        <a href="#sec-start">1. البداية وتسجيل الدخول</a>
+        <a href="#sec-dashboard">2. لوحة التحكم</a>
+        <a href="#sec-customers">3. العملاء</a>
+        <a href="#sec-invoices">4. فواتير البيع</a>
+        <a href="#sec-payments">5. المدفوعات وسندات القبض</a>
+        <a href="#sec-installments">6. أقساط العملاء</a>
+        <a href="#sec-suppliers">7. الموردين</a>
+        <a href="#sec-purchases">8. المشتريات</a>
+        <a href="#sec-items">9. الاصناف المتوفرة</a>
+        <a href="#sec-shipping">10. شركات الشحن</a>
+        <a href="#sec-employees">11. الموظفين والصلاحيات</a>
+        <a href="#sec-printing">12. الطباعة والسندات</a>
+        <a href="#sec-tips">13. نصائح مهمة</a>
+    </aside>
+
+    <div class="guide-main">
+
+        <div class="guide-section" id="sec-start">
+            <h2><span class="g-icon"><i class="fas fa-sign-in-alt"></i></span> البداية وتسجيل الدخول</h2>
+            <p class="desc">أول خطوة للدخول على النظام وحماية بياناتك.</p>
+            <ul class="step-list">
+                <li>افتح النظام من المتصفح وستظهر شاشة تسجيل الدخول.</li>
+                <li>ادخل اسم المستخدم وكلمة المرور ثم اضغط <span class="kbd-tag">دخول</span>.</li>
+                <li>الحساب الرئيسي للمدير هو <span class="kbd-tag">admin</span> — يملك كل الصلاحيات بدون استثناء.</li>
+                <li>جلسة الدخول تستمر 24 ساعة، بعدها يطلب النظام تسجيل الدخول من جديد تلقائيًا.</li>
+                <li>للخروج اضغط «تسجيل الخروج» في أسفل القائمة الجانبية.</li>
+            </ul>
+            <div class="warn-box"><i class="fas fa-triangle-exclamation"></i> <div>يُنصح بتغيير كلمة مرور المدير الافتراضية فورًا ومنح كل موظف حسابه الخاص بدل مشاركة الحساب — لأن اسم الموظف يُسجَّل تلقائيًا على كل فاتورة ودفع يقوم به.</div></div>
+        </div>
+
+        <div class="guide-section" id="sec-dashboard">
+            <h2><span class="g-icon"><i class="fas fa-chart-pie"></i></span> لوحة التحكم</h2>
+            <p class="desc">الشاشة الأولى بعد الدخول — ملخص سريع لحالة النشاط كله.</p>
+            <ul class="step-list">
+                <li>بطاقات إحصائية تعرض: عدد العملاء، الفواتير، إجمالي المبيعات، المدفوعات، والمتأخرات.</li>
+                <li>رسم بياني يقارن الإيرادات مقابل المدفوعات خلال آخر 12 شهرًا — يساعدك تتابع نمو النشاط شهريًا.</li>
+                <li>اضغط أي بطاقة للانتقال المباشر لصفحتها التفصيلية.</li>
+            </ul>
+        </div>
+
+        <div class="guide-section" id="sec-customers">
+            <h2><span class="g-icon"><i class="fas fa-users"></i></span> العملاء</h2>
+            <p class="desc">إدارة قاعدة عملائك ومتابعة أرصدتهم وكشوف حساباتهم.</p>
+            <ul class="step-list">
+                <li><b>إضافة عميل:</b> من القائمة الجانبية «اضافة عميل» — أدخل الاسم (إجباري) والهاتف والعنوان ونوع الحساب.</li>
+                <li><b>ملف العميل:</b> اضغط على اسم العميل في القائمة لترى رصيدته الحالية وجميع فواتيره ودفعاته ومرتجعاته وخطط تقسيطه في مكان واحد.</li>
+                <li><b>كشف الحساب:</b> زر «كشف الحساب» داخل ملف العميل يعرض حركة مالية مفصلة بالتواريخ — قابل للطباعة والتسليم للعميل.</li>
+                <li><b>تسجيل دفعة أو مرتجع:</b> من أزرار ملف العميل مباشرة.</li>
+                <li><b>تعديل / حذف:</b> متاحان من ملف العميل. الحذف لا يتم إلا إذا كان العميل خاليًا من فواتير.</li>
+                <li><b>كشف عام:</b> صفحة تجمع أرصدة كل العملاء دفعة واحدة — مفيدة للمتابعة اليومية.</li>
+            </ul>
+            <div class="tip-box"><i class="fas fa-lightbulb"></i> <div>في أي خانة بحث بالسيستم اكتب جزءًا من الاسم أو رقم الهاتف وستظهر النتائج فورًا أثناء الكتابة.</div></div>
+        </div>
+
+        <div class="guide-section" id="sec-invoices">
+            <h2><span class="g-icon"><i class="fas fa-file-invoice-dollar"></i></span> فواتير البيع</h2>
+            <p class="desc">قلب النظام — إنشاء وإدارة فواتير بيع البضاعة.</p>
+            <ul class="step-list">
+                <li><b>فاتورة جديدة:</b> اختر العميل ثم ابدأ كتابة اسم الصنف — النظام يقترح الأسماء المتوفرة تلقائيًا ويجلب سعر البيع المسجل من آخر عملية شراء.</li>
+                <li>حدد الكمية والفئة (جرام / قطعة...) لكل صنف، وأضف ما تشاء من الأصناف.</li>
+                <li><b>أنواع الدفع:</b>
+                    <br>- <b>كاش:</b> الفاتورة مدفوعة بالكامل.
+                    <br>- <b>آجل:</b> كامل المبلغ يُسجل كمتبقٍ على العميل.
+                    <br>- <b>تقسيط:</b> أدخل المقدم وعدد الأقساط وتاريخ البداية — والنظام ينشئ خطة التقسيط تلقائيًا.</li>
+                <li><b>الخصم:</b> خصم على إجمالي الفاتورة قبل احتساب المتبقي.</li>
+                <li><b>رفع صورة السند:</b> يمكنك إرفاق صورة إثبات الدفع مع الفاتورة.</li>
+                <li><b>إخفاء تفاصيل الفاتورة:</b> خيار يطبع الفاتورة بالإجماليات فقط دون تفاصيل الأصناف — مناسب للتسليم للعميل.</li>
+                <li><b>التعديل والحذف:</b> من قائمة الفواتير افتح الفاتورة ثم عدّل أو احذف. التعديل يعيد احتساب الأرصدة تلقائيًا.</li>
+            </ul>
+            <div class="warn-box"><i class="fas fa-lock"></i> <div>عندما يفتح موظف فاتورة للتعديل تُقفل تلقائيًا لمدة دقيقتين ضد التعديل المتزامن من شخص آخر — حتى لا يتضارب عملكم على نفس الفاتورة.</div></div>
+        </div>
+
+        <div class="guide-section" id="sec-payments">
+            <h2><span class="g-icon"><i class="fas fa-money-bill-wave"></i></span> المدفوعات وسندات القبض</h2>
+            <p class="desc">تسجيل المبالغ التي يستلمها العميل ومتابعة كل حركات التحصيل.</p>
+            <ul class="step-list">
+                <li><b>تسجيل دفعة:</b> من ملف العميل بزر «تسجيل دفعة» — حدد طريقة الدفع والمبلغ والملاحظات.</li>
+                <li>يمكن ربط الدفعة بفاتورة معينة أو تركها عامة على حساب العميل.</li>
+                <li><b>طرق الدفع المتاحة:</b> كاش، تحويل بنكي، محفظة إلكترونية... حسب المعرف في النظام.</li>
+                <li><b>سند قبض:</b> كل دفعة مسجلة لها زر طباعة سند برقم موثق مثل <span class="doc-num kbd-tag">RCV-000123</span> يحتوي باركود واسم المستلم.</li>
+                <li><b>تعديل دفعة:</b> من قائمة المدفوعات — يمكن تصحيح المبلغ أو الطريقة، والأرصدة تتحدث تلقائيًا.</li>
+            </ul>
+        </div>
+
+        <div class="guide-section" id="sec-installments">
+            <h2><span class="g-icon"><i class="fas fa-calendar-check"></i></span> أقساط العملاء</h2>
+            <p class="desc">متابعة تحصيل الأقساط الشهرية للفواتير التقسيطية.</p>
+            <ul class="step-list">
+                <li>عند إنشاء فاتورة تقسيط تنشأ خطة تلقائية برقم مثل <span class="doc-num kbd-tag">INST-000001</span> فيها جدول الأقساط بتواريخها.</li>
+                <li>من صفحة الأقساط ترى حالة كل خطة: نشطة / مكتملة / متأخرة، والمبلغ المتبقي.</li>
+                <li><b>دفع قسط:</b> افتح الخطة واضغط «دفع قسط» — سجل المبلغ ويُخصم من المتبقي، ويمكن دفع أكثر من قسط دفعة واحدة.</li>
+                <li>كل دفعة قسط لها سند طباعة برقم مثل <span class="doc-num kbd-tag">INS-000005</span>.</li>
+            </ul>
+        </div>
+
+        <div class="guide-section" id="sec-suppliers">
+            <h2><span class="g-icon"><i class="fas fa-truck"></i></span> الموردين</h2>
+            <p class="desc">نفس منظومة العملاء لكن بالمعكوس — أنت المدين لهم.</p>
+            <ul class="step-list">
+                <li><b>إضافة مورد:</b> الاسم إجباري + الهاتف والعنوان ونوع الحساب.</li>
+                <li><b>ملف المورد:</b> يجمع مشترياتك منه ومدفوعاتك له ورصيدك المتبقي.</li>
+                <li><b>سداد لمورد:</b> زر «تسجيل دفعة» في ملف المورد، ولكل دفعة سند صرف برقم مثل <span class="doc-num kbd-tag">PAY-000010</span>.</li>
+                <li><b>أقساط الموردين:</b> عند شراء بالتقسيط تنشأ خطة سداد لأجل المورد بأقساط شهرية، ولكل دفعة سند برقم <span class="doc-num kbd-tag">SIP-000002</span>.</li>
+                <li><b>كشوف:</b> كشف مفصل لكل مورد + كشف عام لجميع الموردين.</li>
+            </ul>
+        </div>
+
+        <div class="guide-section" id="sec-purchases">
+            <h2><span class="g-icon"><i class="fas fa-shopping-cart"></i></span> المشتريات</h2>
+            <p class="desc">تسجيل البضاعة الواردة من الموردين — وهي مصدر أسعار البيع المقترحة.</p>
+            <ul class="step-list">
+                <li><b>امر شراء جديد:</b> اختر المورد وأدخل الأصناف بكمياتها وأسعار الشراء وأسعار البيع وفئتها.</li>
+                <li><b>أنواع الدفع:</b> كاش / آجل / تقسيط — بنفس منطق فواتير البيع تمامًا.</li>
+                <li>يمكن رفع صورة سند الشراء للأرشفة.</li>
+                <li><b>تعديل أمر شراء:</b> من قائمة المشتريات — عدّل المورد والأصناف والأسعار كاملة.</li>
+                <li><b>الحذف:</b> يحذف الأمر وكل أصنافه ويعدل رصيد المورد تلقائيًا.</li>
+            </ul>
+        </div>
+
+        <div class="guide-section" id="sec-items">
+            <h2><span class="g-icon"><i class="fas fa-boxes"></i></span> الاصناف المتوفرة</h2>
+            <p class="desc">شجرة مخزونك الحالية — ما لديك الآن فعليًا من كل صنف.</p>
+            <ul class="step-list">
+                <li>يعرض كل صنف مع: <b>الكمية المتاحة</b> = مجموع المشتريات − المبيعات + المرتجعات، وسعر الشراء وسعر البيع من آخر عملية شراء، واسم المورد الأخير.</li>
+                <li>الأصناف التي نفدت كميتها (صفر أو أقل) لا تظهر في القائمة.</li>
+                <li>البحث بالاسم أعلى الصفحة يعمل فورًا.</li>
+                <li><b>تعديل صنف:</b> زر التعديل أمام كل صنف — غيّر الاسم أو الفئة أو الأسعار.</li>
+            </ul>
+            <div class="warn-box"><i class="fas fa-shield-halved"></i> <div><b>مهم جدًا:</b> تغيير سعر الصنف يؤثر على <b>الفواتير الجديدة فقط</b>. الفواتير القديمة تحتفظ بسعرها وقت البيع ولا تتغير أبدًا — شاشة بعتها امبارح بـ1000 هتفضل 1000 حتى لو غيرت السعر النهارده لـ1500.</div></div>
+            <div class="info-box"><i class="fas fa-circle-info"></i> <div>إعادة تسمية صنف تُحدّث الاسم في كل السجلات القديمة (فواتير ومرتجعات ومشتريات) للحفاظ على تقاريرك مترابطة — لكن الأسعار تبقى كما هي.</div></div>
+        </div>
+
+        <div class="guide-section" id="sec-shipping">
+            <h2><span class="g-icon"><i class="fas fa-shipping-fast"></i></span> شركات الشحن</h2>
+            <p class="desc">دليل شركات الشحن التي تتعامل معها لإرفاقها بالفواتير.</p>
+            <ul class="step-list">
+                <li>أضف شركة (اسم + هاتف + ملاحظات) ثم اخترها من قائمة داخل فاتورة البيع.</li>
+                <li>البحث السريع متاح في خانة اختيار شركة الشحن أثناء إنشاء الفاتورة.</li>
+            </ul>
+        </div>
+
+        <div class="guide-section" id="sec-employees">
+            <h2><span class="g-icon"><i class="fas fa-user-tie"></i></span> الموظفين والصلاحيات <span class="kbd-tag">للمدير فقط</span></h2>
+            <p class="desc">تحكم كامل في من يدخل النظام وما يراه — صفحة خاصة بالمدير.</p>
+            <ul class="step-list">
+                <li><b>إضافة موظف:</b> اسم مستخدم وكلمة مرور واسم كامل — يظهر اسمه تلقائيًا على كل مستنده.</li>
+                <li><b>الصلاحيات:</b> لكل موظف قائمة تفصل فيه الصفحات المسموح له بها (عملاء، فواتير، مدفوعات، مشتريات...) — الموظف يرى في القائمة الجانبية ما يملك صلاحيته فقط.</li>
+                <li><b>تعطيل حساب:</b> بدل الحذف — الموظف المعطل لا يستطيع الدخول وسجلاته التاريخية تبقى سليمة.</li>
+                <li>المدير <span class="kbd-tag">admin</span> يتجاوز كل الصلاحيات دائمًا.</li>
+            </ul>
+        </div>
+
+        <div class="guide-section" id="sec-printing">
+            <h2><span class="g-icon"><i class="fas fa-print"></i></span> الطباعة والسندات</h2>
+            <p class="desc">كل مستند في النظام قابل للطباعة بشكل رسمي موحد.</p>
+            <ul class="step-list">
+                <li><b>الفواتير:</b> زر طباعة في صفحة عرض الفاتورة — تصميم رسمي بلوجو الشركة وبياناتها.</li>
+                <li><b>السندات الأربعة:</b> سند قبض دفعة عميل <span class="doc-num">RCV</span>، سند دفعة قسط <span class="doc-num">INS</span>، سند صرف لمورد <span class="doc-num">PAY</span>، سند قسط مورد <span class="doc-num">SIP</span> — كل سند فيه رقم موثق وباركود.</li>
+                <li>اسم الموظف الذي أنشأ المستند يظهر أسفل يمين كل ورقة مطبوعة.</li>
+                <li>في نافذة الطباعة اختر «حفظ PDF» لو أردت أرشفة نسخة إلكترونية.</li>
+            </ul>
+        </div>
+
+        <div class="guide-section" id="sec-tips">
+            <h2><span class="g-icon"><i class="fas fa-star"></i></span> نصائح مهمة</h2>
+            <p class="desc">قواعد ذهبية تضمن دقة حساباتك.</p>
+            <ul class="step-list">
+                <li>سجّل <b>كل عملية شراء</b> أولًا قبل بيع أصنافها — حتى تظهر الأسعار الصحيحة تلقائيًا في الفواتير ويحتسب المخزون بدقة.</li>
+                <li>راجع <b>صفحة الاصناف المتوفرة</b> دوريًا لمعرفة ما اقترب من النفاد.</li>
+                <li>استخدم <b>الكشوف العامة</b> نهاية كل يوم للمراجعة السريعة على الذمم المدينة والدائنة.</li>
+                <li>لا تحذف عميلًا أو موردًا له حركة — الأفضل الاستمرار عليه وربط العمليات الجديدة به للحفاظ على السجل.</li>
+                <li>اعمل <b>نسخة احتياطية دورية</b> لملف قاعدة البيانات <span class="kbd-tag">instance/eldahab.db</span> بنسخه لمكان آمن.</li>
+                <li>في حال تعليق أو خطأ: حدّث الصفحة (F5)، ولو تكرر تواصل مع المسؤول الفني.</li>
+            </ul>
+            <div class="tip-box"><i class="fas fa-heart"></i> <div>النظام يسجل تلقائيًا: من أنشأ كل مستند ومتى، ويحمي الفواتير القديمة من أي تغيير في الأسعار، ويقفل المستندات المفتوحة للتعديل — فاثق به في العمل اليومي.</div></div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

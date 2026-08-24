@@ -2140,6 +2140,12 @@ def shipping_delete(company_id):
     return redirect(url_for('shipping_list'))
 
 
+@app.route('/guide')
+@login_required
+def user_guide():
+    return render_template('guide.html')
+
+
 @app.route('/api/search-shipping')
 @login_required
 def api_search_shipping():
