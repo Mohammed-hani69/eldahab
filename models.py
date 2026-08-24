@@ -112,6 +112,8 @@ class Invoice(db.Model):
     show_balance = db.Column(db.Boolean, default=False)
     payment_method = db.Column(db.String(20), default='cash')
     receipt_image = db.Column(db.String(200))
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    creator = db.relationship('User', foreign_keys=[created_by])
     notes = db.Column(db.Text)
     items = db.relationship('InvoiceItem', backref='invoice', lazy=True, cascade='all, delete-orphan')
     returns = db.relationship('Return', backref='invoice', lazy=True)
@@ -141,6 +143,8 @@ class Payment(db.Model):
     next_payment_amount = db.Column(db.Float, nullable=True)
     payment_method = db.Column(db.String(20), default='cash')
     receipt_image = db.Column(db.String(200))
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    creator = db.relationship('User', foreign_keys=[created_by])
 
 
 class Return(db.Model):
@@ -218,6 +222,8 @@ class Purchase(db.Model):
     payment_type = db.Column(db.String(20), default='cash')
     payment_method = db.Column(db.String(20), default='cash')
     receipt_image = db.Column(db.String(200))
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    creator = db.relationship('User', foreign_keys=[created_by])
     paid_amount = db.Column(db.Float, default=0)
     remaining = db.Column(db.Float, default=0)
     date = db.Column(db.DateTime, default=datetime.utcnow)
@@ -248,6 +254,8 @@ class SupplierPayment(db.Model):
     notes = db.Column(db.Text)
     payment_method = db.Column(db.String(20), default='cash')
     receipt_image = db.Column(db.String(200))
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    creator = db.relationship('User', foreign_keys=[created_by])
 
 
 class InstallmentPlan(db.Model):
@@ -291,6 +299,8 @@ class InstallmentPayment(db.Model):
     notes = db.Column(db.Text)
     payment_method = db.Column(db.String(20), default='cash')
     receipt_image = db.Column(db.String(200))
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    creator = db.relationship('User', foreign_keys=[created_by])
 
 
 class SupplierInstallmentPlan(db.Model):
@@ -334,6 +344,8 @@ class SupplierInstallmentPayment(db.Model):
     notes = db.Column(db.Text)
     payment_method = db.Column(db.String(20), default='cash')
     receipt_image = db.Column(db.String(200))
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    creator = db.relationship('User', foreign_keys=[created_by])
 
 
 class ShippingCompany(db.Model):

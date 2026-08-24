@@ -111,11 +111,11 @@
                     <button type="button" class="btn btn-gold btn-sm" onclick="addRow()"><i class="fas fa-plus"></i> اضافة صنف</button>
                 </div>
                 <div class="data-card-body" style="padding:16px;">
-                    <div class="item-row invoice-row header">
+                    <div class="item-row invoice-row header" style="grid-template-columns:40px 1fr 90px 60px 110px 110px 36px;">
                         <span>#</span>
                         <span>اسم الصنف</span>
-                        <span>الفئة</span>
                         <span>الكمية</span>
+                        <span>الفئة</span>
                         <span>سعر الوحدة</span>
                         <span>الاجمالي</span>
                         <span></span>
@@ -129,8 +129,8 @@
                                 <input type="text" name="item_name_{{ loop.index0 }}" class="form-control item-name-input" placeholder="اسم الصنف" autocomplete="off" value="{{ item.item_name }}">
                                 <div class="autocomplete-dropdown"></div>
                             </div>
-                            <input type="text" name="item_unit_{{ loop.index0 }}" class="unit-type-input item-unit" value="{{ item.unit_type or 'ق' }}" readonly>
                             <input type="number" name="item_qty_{{ loop.index0 }}" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)" value="{{ item.quantity }}">
+                            <input type="text" name="item_unit_{{ loop.index0 }}" class="unit-type-input item-unit" value="{{ item.unit_type or 'ق' }}" readonly>
                             <input type="number" name="item_price_{{ loop.index0 }}" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this)" value="{{ item.unit_price }}">
                             <span class="row-total">{{ "{:,.0f}".format(item.total or 0) }}</span>
                             <button type="button" class="btn-remove" onclick="removeRow(this)">x</button>
@@ -143,8 +143,8 @@
                                 <input type="text" name="item_name_0" class="form-control item-name-input" placeholder="اسم الصنف" autocomplete="off">
                                 <div class="autocomplete-dropdown"></div>
                             </div>
-                            <input type="text" name="item_unit_0" class="unit-type-input item-unit" value="ق" readonly>
                             <input type="number" name="item_qty_0" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)">
+                            <input type="text" name="item_unit_0" class="unit-type-input item-unit" value="ق" readonly>
                             <input type="number" name="item_price_0" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this)">
                             <span class="row-total">0</span>
                             <button type="button" class="btn-remove" onclick="removeRow(this)">x</button>
@@ -205,6 +205,7 @@
 </form>
 
 <style>
+#itemsBody > .item-row.invoice-row { grid-template-columns:40px 1fr 90px 60px 110px 110px 36px; }
 .autocomplete-wrap { position: relative; }
 .autocomplete-dropdown {
     display: none;
@@ -358,8 +359,8 @@ function addRow(focusField) {
             <input type="text" name="item_name_${rowIndex}" class="form-control item-name-input" placeholder="اسم الصنف" autocomplete="off">
             <div class="autocomplete-dropdown"></div>
         </div>
-        <input type="text" name="item_unit_${rowIndex}" class="unit-type-input item-unit" value="ق" readonly>
         <input type="number" name="item_qty_${rowIndex}" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)">
+        <input type="text" name="item_unit_${rowIndex}" class="unit-type-input item-unit" value="ق" readonly>
         <input type="number" name="item_price_${rowIndex}" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this)">
         <span class="row-total">0</span>
         <button type="button" class="btn-remove" onclick="removeRow(this)">x</button>
@@ -567,7 +568,7 @@ document.querySelectorAll('.item-unit').forEach(input => {
     bindUnitToggle(input);
 });
 
-var GRID_COLS_INVOICE = ['.item-name-input', '.item-unit', '.item-qty', '.item-price'];
+var GRID_COLS_INVOICE = ['.item-name-input', '.item-qty', '.item-unit', '.item-price'];
 
 function bindArrowNav(row) {
     var inputs = GRID_COLS_INVOICE.map(function(sel) { return row.querySelector(sel); }).filter(Boolean);

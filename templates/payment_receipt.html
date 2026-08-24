@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-header no-print">
+    <h1 style="font-size:1.3rem;font-weight:700;color:var(--text);margin:0;"><i class="fas fa-receipt" style="margin-left:8px;"></i> {{ doc_title }} #{{ doc_number }}</h1>
+    <a href="{{ request.referrer or url_for('dashboard') }}" class="btn btn-ghost"><i class="fas fa-arrow-right" style="margin-left:4px;"></i> رجوع</a>
+</div>
+
+<div class="invoice-print" id="printArea">
+    <div class="invoice-print-header compact-header">
+        <div>
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="compact-logo">
+        </div>
+        <div style="text-align:center;">
+            <div class="company-name">El Dahab Trading</div>
+            <div style="font-size:0.95rem;font-weight:700;color:#fff;margin-top:2px;">{{ doc_title }}</div>
+        </div>
+        <div style="text-align:left;display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+            <div style="font-size:1.05rem;font-weight:900;color:var(--gold);">{{ doc_number }}</div>
+            <svg id="receiptBarcode" style="max-width:140px;height:30px;"></svg>
+        </div>
+    </div>
+    <div class="invoice-info compact-info">
+        <div><strong>{{ party_label }}:</strong> {{ party_name }}</div>
+        {% if party_phone %}<div><strong>الهاتف:</strong> {{ party_phone }}</div>{% endif %}
+        <div><strong>التاريخ:</strong> {{ pay_date.strftime('%Y-%m-%d') }}</div>
+        {% if linked_value %}
+        <div><strong>{{ linked_label }}:</strong> {{ linked_value }}</div>
+        {% endif %}
+    </div>
+
+    <div style="padding:16px;">
+        <div class="grand-total" style="background:linear-gradient(135deg,var(--navy),#253d5c);">
+            <span class="total-label" style="color:#fff;">{{ amount_label }}</span>
+            <span class="total-value" style="color:var(--gold);">{{ "{:,.0f}".format(amount or 0) }} ج.م</span>
+        </div>
+    </div>
+
+    <div class="compact-payment-bar" style="border-top:1px solid var(--border);padding:10px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:0.78rem;color:var(--text-secondary);">طريقة الدفع:</span>
+        <span class="badge badge-gold">{{ method_label }}</span>
+        {% if remaining_value is not none %}
+        <span style="font-size:0.78rem;color:var(--text-secondary);">|</span>
+        <span style="font-size:0.8rem;font-weight:700;">{{ remaining_label }}: {{ "{:,.0f}".format(remaining_value or 0) }} ج.م</span>
+        {% endif %}
+        {% if receipt_image %}
+        <a href="{{ url_for('static', filename='uploads/receipts/' + receipt_image) }}" target="_blank" class="badge badge-navy" style="text-decoration:none;"><i class="fas fa-image" style="margin-left:2px;"></i> صورة الايصال</a>
+        {% endif %}
+    </div>
+
+    {% if notes %}
+    <div style="padding:10px 16px;border-top:1px solid var(--border);">
+        <span style="font-size:0.78rem;color:var(--text-secondary);">ملاحظات: </span>
+        <span style="font-size:0.82rem;">{{ notes }}</span>
+    </div>
+    {% endif %}
+
+    {% if creator %}
+    <div style="text-align:left;padding:0 16px 12px;font-size:0.62rem;color:var(--text-muted);direction:ltr;">
+        {{ creator.full_name or creator.username }}
+    </div>
+    {% endif %}
+</div>
+
+<div style="margin-top:20px;display:flex;gap:12px;" class="no-print">
+    <button class="btn btn-gold btn-lg" onclick="window.print();"><i class="fas fa-print"></i> طباعة</button>
+</div>
+
+<style>
+.compact-header { padding: 14px 16px; }
+.compact-logo { width: 36px; height: 36px; border-radius: 8px; }
+.compact-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 16px;
+    padding: 8px 16px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+}
+.compact-info div { font-size: 0.78rem !important; padding: 2px 0; }
+.compact-info strong { color: var(--text); }
+.compact-payment-bar {
+    display: flex;
+}
+#receiptBarcode { max-width: 140px; height: 30px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+@media print {
+    @page { margin: 10mm; size: A4; }
+    body { margin: 0; padding: 0; background: #fff; }
+    .no-print { display: none !important; }
+    .sidebar, .mobile-topbar, .sidebar-overlay { display: none !important; }
+    .main-content { margin: 0 !important; padding: 0 !important; }
+    .content-area { padding: 0 !important; }
+
+    .invoice-print {
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        margin: 0;
+        width: 100%;
+    }
+    .compact-header {
+        flex-direction: row !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        gap: 12px !important;
+        padding: 8px 12px !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .compact-logo { width: 28px !important; height: 28px !important; }
+    .company-name { font-size: 1rem !important; }
+    #receiptBarcode {
+        max-width: 120px !important;
+        height: 22px !important;
+        background: #1a365b !important;
+        padding: 3px 6px !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    #receiptBarcode path { stroke: #fff !important; }
+    .compact-info { gap: 2px 12px; padding: 5px 12px; }
+    .compact-info div { font-size: 0.7rem !important; }
+    .compact-payment-bar { padding: 6px 12px !important; font-size: 0.72rem; }
+    .grand-total { padding: 10px 14px !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .grand-total .total-label { font-size: 0.85rem !important; }
+    .grand-total .total-value { font-size: 1.3rem !important; }
+    .badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+</style>
+<script>
+JsBarcode("#receiptBarcode", "{{ doc_number }}", {
+    format: "CODE128",
+    width: 1.5,
+    height: 25,
+    displayValue: false,
+    margin: 0,
+    background: "transparent",
+    lineColor: "#fff"
+});
+</script>
+{% endblock %}

@@ -91,6 +91,8 @@
                             <th>طريقة الدفع</th>
                             <th>الايصال</th>
                             <th>ملاحظات</th>
+                            <th>الموظف</th>
+                            <th>طباعة</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -105,10 +107,12 @@
                                 {% else %}—{% endif %}
                             </td>
                             <td style="font-size:0.82rem;">{{ p.notes or '—' }}</td>
+                            <td style="font-size:0.78rem;color:var(--text-secondary);">{{ p.creator.full_name or p.creator.username if p.creator else '—' }}</td>
+                            <td><a href="{{ url_for('installment_payment_receipt', payment_id=p.id) }}" target="_blank" class="btn btn-sm btn-outline" title="طباعة"><i class="fas fa-print"></i></a></td>
                         </tr>
                         {% endfor %}
                         {% if not plan.payments %}
-                        <tr><td colspan="5" class="empty-state" style="padding:30px;"><p>لا توجد دفعات بعد</p></td></tr>
+                        <tr><td colspan="7" class="empty-state" style="padding:30px;"><p>لا توجد دفعات بعد</p></td></tr>
                         {% endif %}
                     </tbody>
                 </table>

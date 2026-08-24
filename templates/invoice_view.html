@@ -52,8 +52,8 @@
                 <tr>
                     <th style="width:40px;">#</th>
                     <th>اسم الصنف</th>
-                    <th style="width:50px;">الفئة</th>
                     <th style="width:70px;">الكمية</th>
+                    <th style="width:50px;">الفئة</th>
                     <th style="width:100px;">سعر الوحدة</th>
                     <th style="width:110px;">الاجمالي</th>
                 </tr>
@@ -63,8 +63,8 @@
                 <tr class="{% if loop.index % 20 == 0 and not loop.last %}page-break-row{% endif %}">
                     <td>{{ loop.index }}</td>
                     <td style="font-weight:600;">{{ item.item_name }}</td>
-                    <td style="text-align:center;">{{ item.unit_type or 'ق' }}</td>
                     <td>{{ item.quantity }}</td>
+                    <td style="text-align:center;">{{ item.unit_type or 'ق' }}</td>
                     <td>{{ "{:,.0f}".format(item.unit_price or 0) }} ج.م</td>
                     <td style="font-weight:700;">{{ "{:,.0f}".format(item.total or 0) }} ج.م</td>
                 </tr>
@@ -96,8 +96,8 @@
                     <tr>
                         <th style="width:40px;">#</th>
                         <th>اسم الصنف</th>
-                        <th style="width:50px;">الفئة</th>
                         <th style="width:70px;">الكمية</th>
+                        <th style="width:50px;">الفئة</th>
                         <th style="width:100px;">سعر الوحدة</th>
                         <th style="width:110px;">الاجمالي</th>
                     </tr>
@@ -107,8 +107,8 @@
                     <tr>
                         <td>{{ loop.index }}</td>
                         <td>{{ ritem.item_name }}</td>
-                        <td style="text-align:center;">{{ ritem.unit_type or 'ق' }}</td>
                         <td>{{ ritem.quantity }}</td>
+                        <td style="text-align:center;">{{ ritem.unit_type or 'ق' }}</td>
                         <td>{{ "{:,.0f}".format(ritem.unit_price or 0) }} ج.م</td>
                         <td style="color:#dc3545;font-weight:800;">{{ "{:,.0f}".format(ritem.total or 0) }} ج.م</td>
                     </tr>
@@ -120,27 +120,40 @@
     {% endif %}
 
     <div style="padding:0 16px 14px;">
-        {% if invoice.discount and invoice.discount > 0 %}
-        <div style="display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,var(--navy),#253d5c);border-radius:8px;padding:10px 16px;color:#fff;font-size:0.82rem;">
-            <div style="display:flex;align-items:center;gap:6px;">
-                <span style="opacity:0.7;">الاجمالي</span>
-                <span style="font-weight:700;text-decoration:line-through;opacity:0.7;">{{ "{:,.0f}".format(invoice.total or 0) }} ج.م</span>
+        {% set show_bal = invoice.show_balance and cust_balance_total > 0 %}
+        <div style="{% if show_bal %}display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;{% endif %}">
+            <div style="{% if show_bal %}flex:1;min-width:220px;display:flex;{% endif %}">
+                {% if invoice.discount and invoice.discount > 0 %}
+                <div style="display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,var(--navy),#253d5c);border-radius:8px;padding:10px 16px;color:#fff;font-size:0.82rem;width:100%;">
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <span style="opacity:0.7;">الاجمالي</span>
+                        <span style="font-weight:700;text-decoration:line-through;opacity:0.7;">{{ "{:,.0f}".format(invoice.total or 0) }} ج.م</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px;color:#fbb;">
+                        <i class="fas fa-percentage" style="font-size:0.7rem;"></i>
+                        <span style="font-weight:700;">{{ "{:,.0f}".format(invoice.discount) }} ج.م</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <span style="opacity:0.7;">الصافي</span>
+                        <span style="font-size:1rem;font-weight:900;color:var(--gold);">{{ "{:,.0f}".format((invoice.total or 0) - (invoice.discount or 0)) }} ج.م</span>
+                    </div>
+                </div>
+                {% else %}
+                <div class="grand-total compact-total" style="{% if show_bal %}margin-top:0;flex:1;{% endif %}">
+                    <span class="total-label">الاجمالي الكلي</span>
+                    <span class="total-value">{{ "{:,.0f}".format(invoice.total or 0) }} ج.م</span>
+                </div>
+                {% endif %}
             </div>
-            <div style="display:flex;align-items:center;gap:6px;color:#fbb;">
-                <i class="fas fa-percentage" style="font-size:0.7rem;"></i>
-                <span style="font-weight:700;">{{ "{:,.0f}".format(invoice.discount) }} ج.م</span>
+            {% if show_bal %}
+            <div style="flex:1;min-width:220px;display:flex;">
+                <div class="grand-total compact-total" style="background:linear-gradient(135deg,#dc3545,#c82333);margin-top:0;flex:1;">
+                    <span class="total-label"><i class="fas fa-exclamation-triangle" style="margin-left:4px;"></i> اجمالي المستحق على العميل</span>
+                    <span class="total-value">{{ "{:,.0f}".format(cust_balance_total) }} ج.م</span>
+                </div>
             </div>
-            <div style="display:flex;align-items:center;gap:6px;">
-                <span style="opacity:0.7;">الصافي</span>
-                <span style="font-size:1rem;font-weight:900;color:var(--gold);">{{ "{:,.0f}".format((invoice.total or 0) - (invoice.discount or 0)) }} ج.م</span>
-            </div>
+            {% endif %}
         </div>
-        {% else %}
-        <div class="grand-total compact-total">
-            <span class="total-label">الاجمالي الكلي</span>
-            <span class="total-value">{{ "{:,.0f}".format(invoice.total or 0) }} ج.م</span>
-        </div>
-        {% endif %}
         {% if return_amount > 0 %}
         <div class="grand-total compact-total" style="background:linear-gradient(135deg,#dc3545,#c82333);margin-top:6px;">
             <span class="total-label">اجمالي المرتجعات</span>
@@ -182,31 +195,12 @@
         </div>
     </div>
     {% endif %}
-</div>
-
-{% if invoice.show_balance and cust_balance_total > 0 %}
-<div style="padding:0 16px 14px;" class="print-balance-section">
-    <div style="border:2px solid #dc3545;border-radius:8px;overflow:hidden;">
-        <div style="background:#dc3545;color:#fff;padding:8px 12px;font-weight:800;font-size:0.82rem;"><i class="fas fa-exclamation-triangle" style="margin-left:4px;"></i> المستحقات على العميل ({{ invoice.customer.name }})</div>
-        <div style="padding:10px 12px;background:#fff5f5;">
-            <div style="font-size:1.1rem;font-weight:800;color:#dc3545;margin-bottom:8px;">اجمالي المستحق: {{ "{:,.0f}".format(cust_balance_total) }} ج.م</div>
-            <table class="compact-table">
-                <thead><tr><th>فاتورة</th><th>الاجمالي</th><th>المدفوع</th><th style="color:#dc3545;">المتبقي</th></tr></thead>
-                <tbody>
-                {% for b in cust_balance_list %}
-                <tr>
-                    <td>{{ b.number }}</td>
-                    <td>{{ "{:,.0f}".format(b.total) }} ج.م</td>
-                    <td>{{ "{:,.0f}".format(b.paid) }} ج.م</td>
-                    <td style="color:#dc3545;font-weight:700;">{{ "{:,.0f}".format(b.remaining) }} ج.م</td>
-                </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
+    {% if invoice.creator %}
+    <div style="text-align:left;padding:0 16px 8px;font-size:0.62rem;color:var(--text-muted);direction:ltr;">
+        {{ invoice.creator.full_name or invoice.creator.username }}
     </div>
+    {% endif %}
 </div>
-{% endif %}
 
 <div style="margin-top:20px;display:flex;gap:12px;" class="no-print">
     <button class="btn btn-gold btn-lg" onclick="window.print();"><i class="fas fa-print"></i> طباعة</button>

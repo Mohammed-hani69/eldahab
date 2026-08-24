@@ -50,8 +50,8 @@
                 <tr>
                     <th style="width:40px;">#</th>
                     <th>اسم الصنف</th>
-                    <th style="width:50px;">الفئة</th>
                     <th style="width:70px;">الكمية</th>
+                    <th style="width:50px;">الفئة</th>
                     <th style="width:100px;">سعر الشراء</th>
                     <th style="width:100px;">سعر البيع</th>
                     <th style="width:110px;">الاجمالي</th>
@@ -62,8 +62,8 @@
                 <tr class="{% if loop.index % 20 == 0 and not loop.last %}page-break-row{% endif %}">
                     <td>{{ loop.index }}</td>
                     <td style="font-weight:600;">{{ item.item_name }}</td>
-                    <td style="text-align:center;">{{ item.unit_type or 'ق' }}</td>
                     <td>{{ item.quantity }}</td>
+                    <td style="text-align:center;">{{ item.unit_type or 'ق' }}</td>
                     <td>{{ "{:,.0f}".format(item.unit_price or 0) }} ج.م</td>
                     <td>{{ "{:,.0f}".format(item.selling_price or 0) }} ج.م</td>
                     <td style="font-weight:700;">{{ "{:,.0f}".format(item.total or 0) }} ج.م</td>
@@ -123,10 +123,17 @@
         </div>
     </div>
     {% endif %}
+
+    {% if purchase.creator %}
+    <div style="text-align:left;padding:0 16px 8px;font-size:0.62rem;color:var(--text-muted);direction:ltr;">
+        {{ purchase.creator.full_name or purchase.creator.username }}
+    </div>
+    {% endif %}
 </div>
 
 <div style="margin-top:20px;display:flex;gap:12px;" class="no-print">
     <button class="btn btn-gold btn-lg" onclick="window.print();"><i class="fas fa-print"></i> طباعة</button>
+    <a href="{{ url_for('purchase_edit', purchase_id=purchase.id) }}" class="btn btn-outline btn-lg"><i class="fas fa-edit"></i> تعديل</a>
     <a href="{{ url_for('purchases_list') }}" class="btn btn-outline btn-lg"><i class="fas fa-arrow-right"></i> رجوع</a>
     <form method="POST" action="{{ url_for('purchase_delete', purchase_id=purchase.id) }}" style="display:inline;" onsubmit="return confirm('هل انت متاكد من الحذف؟');">
         <button type="submit" class="btn btn-danger btn-lg"><i class="fas fa-trash"></i> حذف</button>

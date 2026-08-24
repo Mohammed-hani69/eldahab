@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+    <h1 style="font-size:1.3rem;font-weight:700;color:var(--text);margin:0;"><i class="fas fa-edit" style="margin-left:8px;"></i> تعديل صنف: {{ name }}</h1>
+    <a href="{{ url_for('items_list') }}" class="btn btn-ghost"><i class="fas fa-arrow-right" style="margin-left:4px;"></i> رجوع للاصناف</a>
+</div>
+
+<div class="two-col">
+    <div>
+        <div class="data-card">
+            <div class="data-card-header">
+                <h3><i class="fas fa-box" style="margin-left:6px;color:var(--gold);"></i> بيانات الصنف</h3>
+                <span style="font-size:0.72rem;color:var(--text-muted);">الحقول المطلوبة *</span>
+            </div>
+            <form method="POST" action="{{ url_for('items_edit', name=name) }}">
+                <div class="data-card-body">
+                    <input type="hidden" name="old_name" value="{{ name }}">
+                    <div class="form-group">
+                        <label><i class="fas fa-tag" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> اسم المنتج *</label>
+                        <input type="text" name="item_name" class="form-control" value="{{ item.item_name }}" required autocomplete="off">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label><i class="fas fa-ruler-horizontal" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> الفئة</label>
+                            <select name="unit_type" class="form-control">
+                                {% for u in ['ق', 'ك', 'ع'] %}
+                                <option value="{{ u }}" {% if item.unit_type == u %}selected{% endif %}>{{ u }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label><i class="fas fa-money-bill-wave" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> سعر الشراء (ج.م)</label>
+                            <input type="number" name="unit_price" class="form-control" min="0" step="any" value="{{ item.unit_price or 0 }}">
+                        </div>
+                        <div class="form-group">
+                            <label><i class="fas fa-store" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> سعر البيع (ج.م)</label>
+                            <input type="number" name="selling_price" class="form-control" min="0" step="any" value="{{ item.selling_price or 0 }}">
+                        </div>
+                    </div>
+
+                    <div style="padding:12px 16px;background:var(--bg);border-radius:var(--radius-xs);border:1px solid var(--border-light);font-size:0.8rem;color:var(--text-secondary);display:flex;gap:18px;flex-wrap:wrap;margin-bottom:16px;">
+                        <span><i class="fas fa-cubes" style="color:var(--gold);margin-left:4px;"></i> الكمية المتاحة: <strong>{{ "{:,.0f}".format(qty) }}</strong></span>
+                        <span><i class="fas fa-truck" style="color:var(--gold);margin-left:4px;"></i> المورد: <strong>{{ supplier }}</strong></span>
+                    </div>
+
+                    <button type="submit" class="btn btn-gold btn-lg" style="width:100%;">
+                        <i class="fas fa-save"></i> حفظ التعديلات
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div>
+        <div class="data-card" style="border:none;box-shadow:none;background:transparent;">
+            <div style="padding:12px 16px;background:var(--warning-bg,#fef9ee);border-radius:var(--radius-xs);border:1px solid rgba(207,163,64,0.25);">
+                    <div style="display:flex;align-items:flex-start;gap:8px;font-size:0.78rem;color:var(--text-secondary);">
+                        <i class="fas fa-info-circle" style="color:var(--gold);margin-top:2px;"></i>
+                        <div>
+                            <strong style="color:var(--navy);">ملاحظة:</strong><br>
+                            - تعديل السعر <strong style="color:#dc3545;">لا يغير الفواتير القديمة نهائياً</strong> (فواتير امبارح تبقى بأسعارها القديمة).<br>
+                            - السعر الجديد يظهر فقط عند عمل <strong style="color:var(--success);">فاتورة بيع جديدة</strong>.<br>
+                            - تغيير اسم الصنف يحدث جميع السجلات المرتبطة به تلقائياً.
+                        </div>
+                    </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

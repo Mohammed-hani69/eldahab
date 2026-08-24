@@ -196,6 +196,11 @@
                     <span class="icon"><i class="fas fa-plus-circle"></i></span> امر شراء جديد
                 </a>
                 {% endif %}
+                {% if current_user.is_admin or current_user.has_permission('items_list') %}
+                <a href="{{ url_for('items_list') }}" class="nav-link {% if request.endpoint == 'items_list' %}active{% endif %}">
+                    <span class="icon"><i class="fas fa-boxes"></i></span> الاصناف المتوفرة
+                </a>
+                {% endif %}
                 {% endif %}
                 {% if current_user.is_admin or current_user.has_permission('shipping') %}
                 <div class="nav-section">الشحن</div>

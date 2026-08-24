@@ -97,8 +97,10 @@
                                 <th>طريقة الدفع</th>
                                 <th>الايصال</th>
                                 <th>ملاحظات</th>
+                                <th>الموظف</th>
                                 <th>الدفعة القادمة</th>
                                 <th>مبلغها</th>
+                                <th></th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -114,13 +116,15 @@
                                     {% else %}—{% endif %}
                                 </td>
                                 <td style="font-size:0.82rem;">{{ p.notes or '—' }}</td>
+                                <td style="font-size:0.78rem;color:var(--text-secondary);">{{ p.creator.full_name or p.creator.username if p.creator else '—' }}</td>
                                 <td style="font-size:0.8rem;">{{ p.next_payment_date.strftime('%Y-%m-%d') if p.next_payment_date else '—' }}</td>
                                 <td style="font-weight:600;">{{ "{:,.0f}".format(p.next_payment_amount) if p.next_payment_amount else '—' }}</td>
+                                <td><a href="{{ url_for('payment_receipt', payment_id=p.id) }}" target="_blank" class="btn btn-sm btn-outline" title="طباعة"><i class="fas fa-print"></i></a></td>
                                 <td><a href="{{ url_for('payment_edit', payment_id=p.id) }}" class="btn btn-sm btn-outline"><i class="fas fa-edit"></i></a></td>
                             </tr>
                             {% endfor %}
                             {% if not payments %}
-                            <tr><td colspan="8" class="empty-state" style="padding:40px;"><p>لا توجد مدفوعات</p></td></tr>
+                            <tr><td colspan="10" class="empty-state" style="padding:40px;"><p>لا توجد مدفوعات</p></td></tr>
                             {% endif %}
                         </tbody>
                     </table>

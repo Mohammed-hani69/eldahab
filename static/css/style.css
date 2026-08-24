@@ -787,7 +787,7 @@ select.form-control { cursor: pointer; }
 /* ============ ITEM ROWS ============ */
 .item-row {
     display: grid;
-    grid-template-columns: 40px 1fr 60px 80px 100px 100px 100px 36px;
+    grid-template-columns: 40px 1fr 80px 60px 100px 100px 100px 36px;
     gap: 8px;
     align-items: center;
     margin-bottom: 6px;
