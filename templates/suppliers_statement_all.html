@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-header no-print">
+    <h1 style="font-size:1.3rem;font-weight:700;color:var(--text);">كشف حساب مجمع - جميع الموردين</h1>
+    <div style="display:flex;gap:8px;">
+        <button class="btn btn-gold" onclick="window.print();"><i class="fas fa-print"></i> طباعة</button>
+        <a href="{{ url_for('suppliers_list') }}" class="btn btn-outline"><i class="fas fa-arrow-right"></i> رجوع للموردين</a>
+    </div>
+</div>
+
+<div class="invoice-print">
+    <div class="invoice-print-header compact-header">
+        <div>
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="compact-logo">
+        </div>
+        <div style="text-align:center;">
+            <div class="company-name">El Dahab Trading</div>
+            <div style="font-size:0.95rem;font-weight:700;color:#fff;margin-top:2px;">كشف حساب مجمع - الموردين</div>
+        </div>
+        <div style="text-align:left;display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+            <div style="font-size:0.85rem;font-weight:800;color:#fff;">{{ now.strftime('%Y-%m-%d') }}</div>
+        </div>
+    </div>
+
+    <div class="compact-info">
+        <div><strong>عدد الموردين:</strong> {{ rows|length }}</div>
+        <div><strong>اجمالي المستحق للموردين:</strong> {{ "{:,.0f}".format(total_balance) }} ج.م</div>
+    </div>
+
+    <div class="invoice-items-area">
+        <table class="compact-table statement-table">
+            <thead>
+                <tr>
+                    <th style="width:40px;">#</th>
+                    <th>اسم المورد</th>
+                    <th style="width:110px;">الهاتف</th>
+                    <th style="width:130px;">اجمالي المشتريات (مستحق)</th>
+                    <th style="width:120px;">اجمالي المدفوعات</th>
+                    <th style="width:130px;">الرصيد المستحق</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td style="font-weight:600;">{{ r.supplier.name }}</td>
+                    <td>{{ r.supplier.phone or '—' }}</td>
+                    <td>{{ "{:,.0f}".format(r.debit) }} ج.م</td>
+                    <td class="text-success">{{ "{:,.0f}".format(r.credit) }} ج.م</td>
+                    <td style="font-weight:800;" class="{{ 'text-danger' if r.balance > 0 else ('text-success' if r.balance < 0 else '') }}">{{ "{:,.0f}".format(r.balance) }} ج.م</td>
+                </tr>
+                {% endfor %}
+                {% if not rows %}
+                <tr><td colspan="6" style="text-align:center;padding:30px;color:#999;">لا يوجد موردين</td></tr>
+                {% endif %}
+            </tbody>
+            <tfoot>
+                <tr class="statement-totals">
+                    <td colspan="3">الاجمالي</td>
+                    <td>{{ "{:,.0f}".format(totals_debit) }} ج.م</td>
+                    <td>{{ "{:,.0f}".format(totals_credit) }} ج.م</td>
+                    <td>{{ "{:,.0f}".format(total_balance) }} ج.م</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<style>
+.statement-table tfoot td {
+    background: var(--navy);
+    color: #fff;
+    font-weight: 800;
+    padding: 9px 10px;
+    font-size: 0.8rem;
+    border-bottom: none;
+}
+@media print {
+    @page { margin: 10mm; size: A4; }
+    body { margin: 0; padding: 0; background: #fff; }
+    .no-print { display: none !important; }
+    .sidebar, .mobile-topbar, .sidebar-overlay { display: none !important; }
+    .main-content { margin: 0 !important; padding: 0 !important; }
+    .content-area { padding: 0 !important; }
+    .invoice-print {
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        margin: 0;
+        width: 100%;
+    }
+    .compact-header {
+        flex-direction: row !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        gap: 12px !important;
+        padding: 8px 12px !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .compact-logo { width: 28px !important; height: 28px !important; }
+    .company-name { font-size: 1rem !important; }
+    .compact-table thead th {
+        padding: 5px 8px !important;
+        font-size: 0.68rem !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .compact-table tbody td { padding: 4px 8px !important; font-size: 0.72rem !important; }
+    .statement-table tfoot td {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+}
+</style>
+
+{% endblock %}

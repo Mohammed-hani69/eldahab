@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#1a365b">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>El Dahab Trading - نظام المحاسبة</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+    <style>
+        h1 .fa { color: var(--gold); }
+        .btn .fa { color: #fff; }
+        .btn-outline .fa { color: var(--text-secondary); }
+        .btn-ghost .fa { color: var(--text-secondary); }
+        .sidebar .fa { color: rgba(255,255,255,0.5); }
+        .sidebar .nav-link.active .fa { color: var(--gold); }
+        .sidebar .nav-link:hover .fa { color: rgba(255,255,255,0.8); }
+
+        .mobile-topbar {
+            display: none;
+            position: fixed;
+            top: 0;
+            right: 0;
+            left: 0;
+            height: 56px;
+            background: var(--navy-dark);
+            z-index: 200;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .mobile-topbar .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .mobile-topbar .logo-area img {
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            border: 1.5px solid rgba(207,163,64,0.3);
+        }
+        .mobile-topbar .logo-area span {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--gold);
+        }
+        .hamburger {
+            width: 40px;
+            height: 40px;
+            border: none;
+            background: rgba(255,255,255,0.08);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 1.1rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
+        }
+        .hamburger:active { background: rgba(255,255,255,0.15); }
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 299;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .sidebar-overlay.show {
+            display: block;
+            opacity: 1;
+        }
+
+        @media (max-width: 900px) {
+            .mobile-topbar { display: flex; }
+            .sidebar {
+                position: fixed;
+                top: 0;
+                right: -290px;
+                width: 280px;
+                height: 100vh;
+                z-index: 300;
+                transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                transform: none;
+            }
+            .sidebar.open { right: 0; }
+            .main-content {
+                margin-right: 0;
+                margin-top: 56px;
+            }
+            .content-area { padding: 16px 12px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="mobile-topbar">
+        <button class="hamburger" onclick="toggleSidebar()">
+            <i class="fas fa-bars"></i>
+        </button>
+        <div class="logo-area">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo">
+            <span>El Dahab</span>
+        </div>
+        <a href="{{ url_for('dashboard') }}" style="color:rgba(255,255,255,0.7);font-size:1rem;">
+            <i class="fas fa-home"></i>
+        </a>
+    </div>
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+    <div class="app-layout">
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo">
+                <h2>El Dahab Trading</h2>
+            </div>
+            <div class="sidebar-nav">
+                {% if current_user.is_admin or current_user.has_permission('dashboard') %}
+                <div class="nav-section">الرئيسية</div>
+                <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
+                    <span class="icon"><i class="fas fa-chart-pie"></i></span> لوحة التحكم
+                </a>
+                {% endif %}
+                {% if current_user.is_admin or current_user.has_permission('customers') or current_user.has_permission('customer_add') %}
+                <div class="nav-section">العملاء</div>
+                {% if current_user.is_admin or current_user.has_permission('customers') %}
+                <a href="{{ url_for('customers_list') }}" class="nav-link {% if 'customer' in request.endpoint %}active{% endif %}">
+                    <span class="icon"><i class="fas fa-users"></i></span> قائمة العملاء
+                </a>
+                {% endif %}
+                {% if current_user.is_admin or current_user.has_permission('customer_add') %}
+                <a href="{{ url_for('customer_add') }}" class="nav-link">
+                    <span class="icon"><i class="fas fa-user-plus"></i></span> اضافة عميل
+                </a>
+                {% endif %}
+                {% endif %}
+                {% if current_user.is_admin or current_user.has_permission('invoices') or current_user.has_permission('invoice_add') %}
+                <div class="nav-section">الفواتير</div>
+                {% if current_user.is_admin or current_user.has_permission('invoices') %}
+                <a href="{{ url_for('invoices_list') }}" class="nav-link {% if 'invoice' in request.endpoint %}active{% endif %}">
+                    <span class="icon"><i class="fas fa-file-invoice-dollar"></i></span> الفواتير
+                </a>
+                {% endif %}
+                {% if current_user.is_admin or current_user.has_permission('invoice_add') %}
+                <a href="{{ url_for('invoice_add') }}" class="nav-link">
+                    <span class="icon"><i class="fas fa-plus-circle"></i></span> فاتورة جديدة
+                </a>
+                {% endif %}
+                {% endif %}
+                {% if current_user.is_admin or current_user.has_permission('payments') or current_user.has_permission('installments_list') or current_user.has_permission('supplier_installments_list') %}
+                <div class="nav-section">المدفوعات</div>
+                {% if current_user.is_admin or current_user.has_permission('payments') %}
+                <a href="{{ url_for('payments_list') }}" class="nav-link {% if 'payment' in request.endpoint and 'supplier' not in request.endpoint %}active{% endif %}">
+                    <span class="icon"><i class="fas fa-money-bill-wave"></i></span> المدفوعات
+                </a>
+                {% endif %}
+                {% if current_user.is_admin or current_user.has_permission('installments_list') %}
+                <a href="{{ url_for('installments_list') }}" class="nav-link {% if 'installment' in request.endpoint and 'supplier' not in request.endpoint %}active{% endif %}">
+                    <span class="icon"><i class="fas fa-calendar-check"></i></span> اقساط العملاء
+                </a>
+                {% endif %}
+                {% if current_user.is_admin or current_user.has_permission('supplier_installments_list') %}
+                <a href="{{ url_for('supplier_installments_list') }}" class="nav-link {% if 'supplier_installment' in request.endpoint %}active{% endif %}">
+                    <span class="icon"><i class="fas fa-calendar-alt"></i></span> اقساط الموردين
+                </a>
+                {% endif %}
+                {% endif %}
+                {% if current_user.is_admin or current_user.has_permission('suppliers') or current_user.has_permission('supplier_add') %}
+                <div class="nav-section">الموردين</div>
+                {% if current_user.is_admin or current_user.has_permission('suppliers') %}
+                <a href="{{ url_for('suppliers_list') }}" class="nav-link {% if 'supplier' in request.endpoint and 'payment' not in request.endpoint %}active{% endif %}">
+                    <span class="icon"><i class="fas fa-truck"></i></span> الموردين
+                </a>
+                {% endif %}
+                {% if current_user.is_admin or current_user.has_permission('supplier_add') %}
+                <a href="{{ url_for('supplier_add') }}" class="nav-link">
+                    <span class="icon"><i class="fas fa-user-plus"></i></span> اضافة مورد
+                </a>
+                {% endif %}
+                {% endif %}
+                {% if current_user.is_admin or current_user.has_permission('purchases') or current_user.has_permission('purchase_add') %}
+                <div class="nav-section">المشتريات</div>
+                {% if current_user.is_admin or current_user.has_permission('purchases') %}
+                <a href="{{ url_for('purchases_list') }}" class="nav-link {% if 'purchase' in request.endpoint %}active{% endif %}">
+                    <span class="icon"><i class="fas fa-shopping-cart"></i></span> المشتريات
+                </a>
+                {% endif %}
+                {% if current_user.is_admin or current_user.has_permission('purchase_add') %}
+                <a href="{{ url_for('purchase_add') }}" class="nav-link">
+                    <span class="icon"><i class="fas fa-plus-circle"></i></span> امر شراء جديد
+                </a>
+                {% endif %}
+                {% endif %}
+                {% if current_user.is_admin or current_user.has_permission('shipping') %}
+                <div class="nav-section">الشحن</div>
+                <a href="{{ url_for('shipping_list') }}" class="nav-link {% if 'shipping' in request.endpoint %}active{% endif %}">
+                    <span class="icon"><i class="fas fa-shipping-fast"></i></span> شركات الشحن
+                </a>
+                {% endif %}
+                {% if current_user.is_admin %}
+                <div class="nav-section">الادارة</div>
+                <a href="{{ url_for('employees_list') }}" class="nav-link {% if 'employee' in request.endpoint %}active{% endif %}">
+                    <span class="icon"><i class="fas fa-user-tie"></i></span> ادارة الموظفين
+                </a>
+                {% endif %}
+                <div style="border-top: 1px solid rgba(255,255,255,0.1); margin: 12px 0;"></div>
+                <div class="nav-section">
+                    <i class="fas fa-user-circle"></i>
+                    {{ current_user.full_name or current_user.username if current_user else '' }}
+                </div>
+                <a href="{{ url_for('logout') }}" class="nav-link">
+                    <span class="icon"><i class="fas fa-sign-out-alt"></i></span> تسجيل الخروج
+                </a>
+            </div>
+        </nav>
+        <main class="main-content">
+            <div class="content-area">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for cat, msg in messages %}
+                        <div class="alert alert-{{ cat }}">
+                            <i class="fas {% if cat == 'success' %}fa-check-circle{% else %}fa-exclamation-circle{% endif %}"></i>
+                            {{ msg }}
+                        </div>
+                    {% endfor %}
+                {% endif %}
+                {% endwith %}
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+    function toggleSidebar() {
+        document.getElementById('sidebar').classList.toggle('open');
+        document.querySelector('.sidebar-overlay').classList.toggle('show');
+    }
+    document.querySelectorAll('.sidebar .nav-link').forEach(function(link) {
+        link.addEventListener('click', function() {
+            if (window.innerWidth <= 900) {
+                document.getElementById('sidebar').classList.remove('open');
+                document.querySelector('.sidebar-overlay').classList.remove('show');
+            }
+        });
+    });
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

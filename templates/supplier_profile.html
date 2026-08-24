@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
+    <h1 style="font-size:1.3rem;font-weight:700;color:var(--text);">ملف المورد</h1>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <a href="{{ url_for('supplier_statement', supplier_id=supplier.id) }}" class="btn btn-navy"><i class="fas fa-file-invoice-dollar"></i> كشف حساب</a>
+        <a href="{{ url_for('supplier_payment_add', supplier_id=supplier.id) }}" class="btn btn-gold"><i class="fas fa-plus"></i> اضافة دفعة</a>
+        <a href="{{ url_for('supplier_edit', supplier_id=supplier.id) }}" class="btn btn-outline"><i class="fas fa-edit"></i> تعديل</a>
+        <form method="POST" action="{{ url_for('supplier_delete', supplier_id=supplier.id) }}" style="display:inline;" onsubmit="return confirm('هل انت متاكد من حذف هذا المورد؟');">
+            <button type="submit" class="btn btn-danger"><i class="fas fa-trash"></i> حذف</button>
+        </form>
+    </div>
+</div>
+
+<div class="profile-header">
+    <h2>{{ supplier.name }}</h2>
+    <div class="profile-meta">
+        <span><i class="fas fa-phone" style="color:var(--text-secondary);margin-left:4px;"></i> {{ supplier.phone or 'لا يوجد هاتف' }}</span>
+        <span><i class="fas fa-map-marker-alt" style="color:var(--text-secondary);margin-left:4px;"></i> {{ supplier.address or '' }}</span>
+    </div>
+    <div class="profile-balance">
+        <div class="balance-item">
+            <div class="balance-value">{{ "{:,.0f}".format(supplier.total_purchased() or 0) }}</div>
+            <div class="balance-label">اجمالي المشتريات (ج.م)</div>
+        </div>
+        <div class="balance-item">
+            <div class="balance-value">{{ "{:,.0f}".format(supplier.total_paid() or 0) }}</div>
+            <div class="balance-label">اجمالي المدفوعات (ج.م)</div>
+        </div>
+        <div class="balance-item">
+            <div class="balance-value" style="color:{{ '#ff6b6b' if supplier.balance() > 0 else '#51cf66' }}">{{ "{:,.0f}".format(supplier.balance() or 0) }}</div>
+            <div class="balance-label">المتبقي (ج.م)</div>
+        </div>
+    </div>
+</div>
+
+<div class="two-col" style="margin-top:24px;">
+    <div>
+        <div class="data-card">
+            <div class="data-card-body" style="padding:0;">
+                <div class="tabs" style="margin:0;border-radius:0;border-bottom:1px solid var(--border);">
+                    <button class="tab-btn active" onclick="switchTab(this, 'purchases')" style="flex:1;"><i class="fas fa-shopping-cart" style="margin-left:4px;"></i> المشتريات ({{ purchases|length }})</button>
+                    <button class="tab-btn" onclick="switchTab(this, 'supplier-payments')" style="flex:1;"><i class="fas fa-money-bill-wave" style="margin-left:4px;"></i> المدفوعات ({{ payments|length }})</button>
+                    <button class="tab-btn" onclick="switchTab(this, 'installments')" style="flex:1;"><i class="fas fa-calendar-check" style="margin-left:4px;"></i> الاقساط ({{ installment_plans|length }})</button>
+                </div>
+
+                <div id="tab-purchases" class="tab-content">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>رقم امر الشراء</th>
+                                <th>التاريخ</th>
+                                <th>الاجمالي</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in purchases %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td><a href="{{ url_for('purchase_view', purchase_id=p.id) }}" style="color:#1a365b;text-decoration:none;font-weight:700;">{{ p.purchase_number }}</a></td>
+                                <td>{{ p.date.strftime('%Y-%m-%d') }}</td>
+                                <td style="font-weight:800;">{{ "{:,.0f}".format(p.total or 0) }} ج.م</td>
+                            </tr>
+                            {% endfor %}
+                            {% if not purchases %}
+                            <tr><td colspan="4" class="empty-state" style="padding:40px;"><p>لا توجد مشتريات</p></td></tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="tab-supplier-payments" class="tab-content" style="display:none;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>التاريخ</th>
+                                <th>المبلغ</th>
+                                <th>طريقة الدفع</th>
+                                <th>الايصال</th>
+                                <th>ملاحظات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in payments %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td>{{ p.date.strftime('%Y-%m-%d') }}</td>
+                                <td class="text-success" style="font-weight:800;">{{ "{:,.0f}".format(p.amount or 0) }} ج.م</td>
+                                <td><span class="badge badge-gold">{{ PAYMENT_METHODS.get(p.payment_method, 'كاش') }}</span></td>
+                                <td>
+                                    {% if p.receipt_image %}
+                                    <a href="{{ url_for('static', filename='uploads/receipts/' + p.receipt_image) }}" target="_blank" title="عرض الايصال"><i class="fas fa-image" style="color:var(--gold);font-size:1rem;"></i></a>
+                                    {% else %}—{% endif %}
+                                </td>
+                                <td>{{ p.notes or '—' }}</td>
+                            </tr>
+                            {% endfor %}
+                            {% if not payments %}
+                            <tr><td colspan="6" class="empty-state" style="padding:40px;"><p>لا توجد مدفوعات</p></td></tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="tab-installments" class="tab-content" style="display:none;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>رقم الخطة</th>
+                                <th>التاريخ</th>
+                                <th>الاجمالي</th>
+                                <th>المتبقي</th>
+                                <th>القسط الشهري</th>
+                                <th>الحالة</th>
+                                <th>الاجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for plan in installment_plans %}
+                            <tr>
+                                <td style="font-weight:700;">{{ plan.plan_number }}</td>
+                                <td style="font-size:0.8rem;color:var(--text-secondary);">{{ plan.start_date.strftime('%Y-%m-%d') }}</td>
+                                <td style="font-weight:700;">{{ "{:,.0f}".format(plan.total_amount or 0) }} ج.م</td>
+                                <td class="{% if plan.remaining > 0 %}text-danger{% else %}text-success{% endif %}" style="font-weight:700;">{{ "{:,.0f}".format(plan.remaining or 0) }} ج.م</td>
+                                <td>{{ "{:,.0f}".format(plan.installment_amount or 0) }} ج.م</td>
+                                <td>
+                                    {% if plan.status == 'active' %}
+                                    <span class="badge badge-info">نشط</span>
+                                    {% elif plan.status == 'completed' %}
+                                    <span class="badge badge-success">مكتمل</span>
+                                    {% else %}
+                                    <span class="badge badge-danger">{{ plan.status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="{{ url_for('supplier_installment_view', plan_id=plan.id) }}" class="btn btn-sm btn-navy">عرض</a>
+                                    {% if plan.status == 'active' %}
+                                    <a href="{{ url_for('supplier_installment_pay', plan_id=plan.id) }}" class="btn btn-sm btn-gold">دفع</a>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            {% if not installment_plans %}
+                            <tr><td colspan="7" class="empty-state" style="padding:40px;"><p>لا توجد خطط تقسيط</p></td></tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div>
+        <div class="data-card">
+            <div class="data-card-body">
+                <h3 style="margin:0 0 16px;font-size:0.95rem;font-weight:700;color:var(--text);">ملخص سريع</h3>
+                <div style="display:flex;flex-direction:column;gap:12px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--bg-secondary);border-radius:8px;">
+                        <span style="font-size:0.82rem;color:var(--text-secondary);">اجمالي المشتريات</span>
+                        <span style="font-weight:700;color:var(--text);">{{ "{:,.0f}".format(supplier.total_purchased() or 0) }} ج.م</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--bg-secondary);border-radius:8px;">
+                        <span style="font-size:0.82rem;color:var(--text-secondary);">اجمالي المدفوعات</span>
+                        <span style="font-weight:700;color:#51cf66;">{{ "{:,.0f}".format(supplier.total_paid() or 0) }} ج.م</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:rgba(59,130,246,0.08);border-radius:8px;">
+                        <span style="font-size:0.82rem;color:var(--text-secondary);">مخطط بالتقسيط</span>
+                        <span style="font-weight:700;color:var(--info);">{{ "{:,.0f}".format(supplier.total_installment_plan_amount() or 0) }} ج.م</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:rgba(16,185,129,0.08);border-radius:8px;">
+                        <span style="font-size:0.82rem;color:var(--text-secondary);">مدفوع من الاقساط</span>
+                        <span style="font-weight:700;color:var(--success);">{{ "{:,.0f}".format(supplier.total_installment_paid() or 0) }} ج.م</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:rgba(239,68,68,0.08);border-radius:8px;">
+                        <span style="font-size:0.82rem;color:var(--text-secondary);">متاخر عن الاقساط</span>
+                        <span style="font-weight:700;color:var(--danger);">{{ "{:,.0f}".format(supplier.total_installment_overdue() or 0) }} ج.م</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 12px;background:{{ 'rgba(255,107,107,0.1)' if supplier.balance() > 0 else 'rgba(81,207,102,0.1)' }};border-radius:8px;border:1px solid {{ 'rgba(255,107,107,0.3)' if supplier.balance() > 0 else 'rgba(81,207,102,0.3)' }};">
+                        <span style="font-size:0.82rem;font-weight:600;">المتبقي</span>
+                        <span style="font-weight:800;font-size:1.05rem;color:{{ '#ff6b6b' if supplier.balance() > 0 else '#51cf66' }}">{{ "{:,.0f}".format(supplier.balance() or 0) }} ج.م</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="data-card" style="margin-top:16px;">
+            <div class="data-card-body">
+                <h3 style="margin:0 0 16px;font-size:0.95rem;font-weight:700;color:var(--text);">اجراءات سريعة</h3>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                    <a href="{{ url_for('supplier_statement', supplier_id=supplier.id) }}" class="btn btn-navy" style="width:100%;justify-content:center;"><i class="fas fa-file-invoice-dollar"></i> كشف حساب</a>
+                    <a href="{{ url_for('supplier_payment_add', supplier_id=supplier.id) }}" class="btn btn-gold" style="width:100%;justify-content:center;"><i class="fas fa-money-bill-wave"></i> اضافة دفعة</a>
+                    <a href="{{ url_for('supplier_edit', supplier_id=supplier.id) }}" class="btn btn-outline" style="width:100%;justify-content:center;"><i class="fas fa-edit"></i> تعديل البيانات</a>
+                    <form method="POST" action="{{ url_for('supplier_delete', supplier_id=supplier.id) }}" style="display:inline;" onsubmit="return confirm('هل انت متاكد من حذف هذا المورد؟');">
+                        <button type="submit" class="btn btn-danger" style="width:100%;justify-content:center;"><i class="fas fa-trash"></i> حذف المورد</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function switchTab(btn, tabId) {
+    document.querySelectorAll('.tab-btn').forEach(function(b) {
+        b.classList.remove('active');
+        b.style.borderBottom = '';
+    });
+    document.querySelectorAll('.tab-content').forEach(function(c) {
+        c.style.display = 'none';
+    });
+    btn.classList.add('active');
+    btn.style.borderBottom = '2px solid var(--gold)';
+    document.getElementById('tab-' + tabId).style.display = 'block';
+}
+</script>
+{% endblock %}

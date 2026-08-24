@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+    <h1 style="font-size:1.3rem;font-weight:700;color:var(--text);margin-bottom:0;">
+        <i class="fas fa-file-invoice" style="margin-left:8px;"></i> الفواتير
+    </h1>
+    <a href="{{ url_for('invoice_add') }}" class="btn btn-gold"><i class="fas fa-plus"></i> فاتورة جديدة</a>
+</div>
+
+<div class="data-card" style="margin-bottom:24px;">
+    <div class="data-card-body">
+        <form method="GET" action="{{ url_for('invoices_list') }}" style="display:flex;gap:12px;flex-wrap:wrap;">
+            <input type="text" name="search" class="form-control" placeholder="بحث برقم الفاتورة أو اسم العميل..." value="{{ search }}" style="flex:1;min-width:200px;">
+            <button type="submit" class="btn btn-gold"><i class="fas fa-search"></i> بحث</button>
+            {% if search %}
+            <a href="{{ url_for('invoices_list') }}" class="btn btn-outline"><i class="fas fa-times"></i> مسح</a>
+            {% endif %}
+        </form>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
+            <a href="{{ url_for('invoices_list') }}" class="btn btn-sm {% if not payment_type %}btn-gold{% else %}btn-outline{% endif %}">الكل</a>
+            {% for key, label in PAYMENT_TYPES.items() %}
+            <a href="{{ url_for('invoices_list', payment_type=key) }}" class="btn btn-sm {% if payment_type == key %}btn-gold{% else %}btn-outline{% endif %}">{{ label }}</a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="data-card">
+    <div class="data-card-header">
+        <h3>الفواتير ({{ invoices|length }})</h3>
+    </div>
+    <div class="data-card-body" style="padding:0;">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>رقم الفاتورة</th>
+                    <th>العميل</th>
+                    <th>التاريخ</th>
+                    <th>الاجمالي</th>
+                    <th>نوع الدفع</th>
+                    <th>مرتجع</th>
+                    <th>الاجراءات</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for inv in invoices %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td><a href="{{ url_for('invoice_view', invoice_id=inv.id) }}" style="color:var(--navy);text-decoration:none;font-weight:700;">{{ inv.invoice_number }}</a></td>
+                    <td>{{ inv.customer.name }}</td>
+                    <td>{{ inv.date.strftime('%Y-%m-%d') }}</td>
+                    <td style="font-weight:700;">{{ "{:,.0f}".format(inv.total or 0) }} ج.م</td>
+                    <td>
+                        {% if inv.payment_type == 'cash' %}
+                        <span class="badge badge-success">نقداً</span>
+                        {% elif inv.payment_type == 'credit' %}
+                        <span class="badge badge-warning" style="background:rgba(245,158,11,0.12);color:#b45309;">اجل</span>
+                        {% elif inv.payment_type == 'installment' %}
+                        <span class="badge badge-info">تقسيط</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if inv.is_returned %}
+                        <span class="badge badge-danger">مرتجعة</span>
+                        {% else %}
+                        <span class="badge badge-success">نشطة</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('invoice_view', invoice_id=inv.id) }}" class="btn btn-sm btn-navy"><i class="fas fa-eye"></i> عرض</a>
+                        <form method="POST" action="{{ url_for('invoice_delete', invoice_id=inv.id) }}" style="display:inline;" onsubmit="return confirm('هل انت متاكد من الحذف؟');">
+                            <button type="submit" class="btn btn-sm btn-danger"><i class="fas fa-trash"></i> حذف</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not invoices %}
+                <tr>
+                    <td colspan="8" class="empty-state" style="padding:40px;">
+                        <div class="empty-icon"><i class="fas fa-file-invoice"></i></div>
+                        <p>لا توجد فواتير</p>
+                    </td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+    <h1 style="font-size:1.3rem;font-weight:700;color:var(--text);margin:0;">
+        {% if user %}<i class="fas fa-user-edit" style="margin-left:8px;"></i> تعديل بيانات الموظف{% else %}<i class="fas fa-user-plus" style="margin-left:8px;"></i> اضافة موظف جديد{% endif %}
+    </h1>
+    <a href="{{ url_for('employees_list') }}" class="btn btn-ghost"><i class="fas fa-arrow-right" style="margin-left:4px;"></i> رجوع للقائمة</a>
+</div>
+
+<form method="POST">
+    <div class="two-col">
+        <div>
+            <div class="data-card">
+                <div class="data-card-header">
+                    <h3><i class="fas fa-id-card" style="margin-left:6px;color:var(--gold);"></i> البيانات الاساسية</h3>
+                    <span style="font-size:0.72rem;color:var(--text-muted);">الحقول المطلوبة *</span>
+                </div>
+                <div class="data-card-body">
+                    <div class="form-group">
+                        <label><i class="fas fa-user" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> اسم المستخدم *</label>
+                        <input type="text" name="username" class="form-control" value="{{ user.username if user else '' }}" {{ 'readonly style="background:#f1f5f9;cursor:not--allowed;"' if user else 'required' }} placeholder="اسم المستخدم للدخول" autofocus>
+                    </div>
+                    <div class="form-group">
+                        <label><i class="fas fa-id-card" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> الاسم الكامل</label>
+                        <input type="text" name="full_name" class="form-control" value="{{ user.full_name if user else '' }}" placeholder="الاسم الكامل للموظف">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label><i class="fas fa-lock" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> كلمة المرور {% if user %}<span style="font-weight:400;color:var(--text-muted);font-size:0.72rem;">(اتركها فارغة لعدم التغيير)</span>{% endif %} *</label>
+                        <input type="password" name="password" class="form-control" {{ '' if user else 'required' }} placeholder="{{ 'اتركها فارغة لعدم التغيير' if user else 'كلمة المرور' }}">
+                    </div>
+                </div>
+            </div>
+
+            <div class="data-card" style="margin-top:20px;">
+                <div class="data-card-header">
+                    <h3><i class="fas fa-shield-alt" style="margin-left:6px;color:var(--gold);"></i> الحالة والصلاحية</h3>
+                </div>
+                <div class="data-card-body">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                        <label class="toggle-card" id="adminCard" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border:2px solid {% if user and user.is_admin %}var(--gold){% else %}#e2e8f0{% endif %};border-radius:var(--radius-sm);cursor:pointer;transition:all 0.3s;{% if user and user.is_admin %}background:linear-gradient(135deg,rgba(207,163,64,0.06),rgba(207,163,64,0.02));{% endif %}">
+                            <input type="checkbox" name="is_admin" value="1" {{ 'checked' if user and user.is_admin }} style="display:none;">
+                            <div style="width:40px;height:40px;border-radius:10px;background:{% if user and user.is_admin %}linear-gradient(135deg,#cfa340,#b8922e){% else %}#f1f5f9{% endif %};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                                <i class="fas fa-crown" style="color:{% if user and user.is_admin %}#fff{% else %}#94a3b8{% endif %};font-size:1rem;"></i>
+                            </div>
+                            <div>
+                                <div style="font-weight:600;font-size:0.88rem;color:var(--text);">مدير</div>
+                                <div style="font-size:0.75rem;color:var(--text-muted);">صلاحيات كاملة لجميع الصفحات</div>
+                            </div>
+                        </label>
+
+                        <label class="toggle-card" id="activeCard" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border:2px solid {% if not user or user.is_active %}#10b981{% else %}#e2e8f0{% endif %};border-radius:var(--radius-sm);cursor:pointer;transition:all 0.3s;{% if not user or user.is_active %}background:linear-gradient(135deg,rgba(16,185,129,0.06),rgba(16,185,129,0.02));{% endif %}">
+                            <input type="checkbox" name="is_active" value="1" {{ 'checked' if not user or user.is_active }} style="display:none;">
+                            <div style="width:40px;height:40px;border-radius:10px;background:{% if not user or user.is_active %}linear-gradient(135deg,#10b981,#059669){% else %}#f1f5f9{% endif %};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                                <i class="fas fa-check-circle" style="color:{% if not user or user.is_active %}#fff{% else %}#94a3b8{% endif %};font-size:1rem;"></i>
+                            </div>
+                            <div>
+                                <div style="font-weight:600;font-size:0.88rem;color:var(--text);">نشط</div>
+                                <div style="font-size:0.75rem;color:var(--text-muted);">يمكن للموظف تسجيل الدخول</div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <div class="data-card" id="permissionsSection">
+                <div class="data-card-header">
+                    <h3><i class="fas fa-key" style="margin-left:6px;color:var(--gold);"></i> صلاحيات الصفحات</h3>
+                    <button type="button" class="btn btn-sm btn-outline" onclick="toggleAll(true)" style="font-size:0.72rem;"><i class="fas fa-check-double"></i> تحديد الكل</button>
+                </div>
+                <div class="data-card-body">
+                    <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:16px;padding:10px 14px;background:var(--info-bg);border-radius:var(--radius-xs);border:1px solid rgba(59,130,246,0.1);">
+                        <i class="fas fa-info-circle" style="margin-left:4px;"></i>
+                        اختر الصفحات التي يمكن للموظف الوصول اليها. المدير لديه صلاحيات كاملة تلقائياً.
+                    </p>
+                    {% set groups = {} %}
+                    {% for key, page in PAGES.items() %}
+                        {% set g = page.group %}
+                        {% if g not in groups %}
+                            {% set _ = groups.update({g: []}) %}
+                        {% endif %}
+                        {% set _ = groups[g].append((key, page)) %}
+                    {% endfor %}
+                    {% for group_name, pages in groups.items() %}
+                    <div style="margin-bottom:16px;">
+                        <div style="font-weight:600;font-size:0.82rem;color:var(--navy);margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid rgba(207,163,64,0.2);display:flex;align-items:center;gap:6px;">
+                            <i class="fas fa-folder" style="color:var(--gold);font-size:0.75rem;"></i> {{ group_name }}
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                            {% for key, page in pages %}
+                            <label class="perm-check" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid #e2e8f0;border-radius:var(--radius-xs);cursor:pointer;font-size:0.82rem;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--gold)';this.style.background='rgba(207,163,64,0.03)'" onmouseout="if(!this.querySelector('input').checked){this.style.borderColor='#e2e8f0';this.style.background='transparent'}">
+                                <input type="checkbox" name="permissions" value="{{ key }}" style="accent-color:var(--gold);width:15px;height:15px;"
+                                    {{ 'checked' if user and (user.is_admin or key in user.permissions|map(attribute='page')|list) }}>
+                                <i class="fas {{ page.icon }}" style="color:var(--navy);font-size:0.78rem;width:18px;text-align:center;"></i>
+                                <span>{{ page.name }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+
+                    <div style="display:flex;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid #f1f5f9;">
+                        <button type="button" class="btn btn-sm btn-outline" onclick="toggleAll(true)"><i class="fas fa-check-double"></i> تحديد الكل</button>
+                        <button type="button" class="btn btn-sm btn-outline" onclick="toggleAll(false)"><i class="fas fa-times"></i> الغاء الكل</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div style="margin-top:20px;">
+        <div class="data-card" style="border:none;box-shadow:none;background:transparent;">
+            <div style="display:flex;gap:10px;">
+                <button type="submit" class="btn btn-gold btn-lg" style="flex:1;">
+                    <i class="fas fa-save"></i> {% if user %}حفظ التعديلات{% else %}اضافة الموظف{% endif %}
+                </button>
+                <a href="{{ url_for('employees_list') }}" class="btn btn-outline btn-lg">الغاء</a>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleAll(state) {
+    document.querySelectorAll('input[name="permissions"]').forEach(function(cb) {
+        cb.checked = state;
+        var label = cb.closest('label');
+        if (label) {
+            label.style.borderColor = state ? 'var(--gold)' : '#e2e8f0';
+            label.style.background = state ? 'rgba(207,163,64,0.03)' : 'transparent';
+        }
+    });
+}
+
+function updateToggleCard(card, checked, activeColor, inactiveColor) {
+    var icon = card.querySelector('i:last-child');
+    var circle = card.querySelector('div:first-child');
+    card.style.borderColor = checked ? activeColor : '#e2e8f0';
+    card.style.background = checked ? 'linear-gradient(135deg,' + activeColor + '11,' + activeColor + '05)' : 'transparent';
+    circle.style.background = checked ? 'linear-gradient(135deg,' + activeColor + ',' + (activeColor === '#cfa340' ? '#b8922e' : '#059669') + ')' : '#f1f5f9';
+    icon.style.color = checked ? '#fff' : '#94a3b8';
+}
+
+var adminCheck = document.querySelector('input[name="is_admin"]');
+var activeCheck = document.querySelector('input[name="is_active"]');
+var permSection = document.getElementById('permissionsSection');
+var adminCard = document.getElementById('adminCard');
+var activeCard = document.getElementById('activeCard');
+
+adminCheck.addEventListener('change', function() {
+    permSection.style.display = this.checked ? 'none' : 'block';
+    updateToggleCard(adminCard, this.checked, '#cfa340', '#94a3b8');
+});
+
+activeCheck.addEventListener('change', function() {
+    updateToggleCard(activeCard, this.checked, '#10b981', '#94a3b8');
+});
+
+if (adminCheck.checked) {
+    permSection.style.display = 'none';
+}
+
+// Highlight checked permission cards
+document.querySelectorAll('input[name="permissions"]').forEach(function(cb) {
+    cb.addEventListener('change', function() {
+        var label = this.closest('label');
+        if (this.checked) {
+            label.style.borderColor = 'var(--gold)';
+            label.style.background = 'rgba(207,163,64,0.03)';
+        } else {
+            label.style.borderColor = '#e2e8f0';
+            label.style.background = 'transparent';
+        }
+    });
+    if (cb.checked) {
+        var label = cb.closest('label');
+        label.style.borderColor = 'var(--gold)';
+        label.style.background = 'rgba(207,163,64,0.03)';
+    }
+});
+</script>
+{% endblock %}

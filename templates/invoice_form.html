@@ -1,0 +1,821 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+    <h1 style="font-size:1.3rem;font-weight:700;color:var(--text);margin:0;"><i class="fas fa-file-alt" style="margin-left:8px;"></i> {% if invoice %}تعديل فاتورة {{ invoice.invoice_number }}{% else %}فاتورة بيع جديدة{% endif %}</h1>
+    <a href="{{ url_for('invoices_list') }}" class="btn btn-ghost"><i class="fas fa-arrow-right" style="margin-left:4px;"></i> رجوع للقائمة</a>
+</div>
+
+<div id="lockBanner" style="display:none;padding:14px 18px;border-radius:var(--radius-sm);margin-bottom:16px;font-weight:600;font-size:0.88rem;"></div>
+
+<form method="POST" id="invoiceForm" enctype="multipart/form-data" {% if invoice %}action="{{ url_for('invoice_edit', invoice_id=invoice.id) }}"{% endif %}>
+    <div class="two-col">
+        <div>
+            <div class="data-card" style="margin-bottom:20px;">
+                <div class="data-card-header">
+                    <h3><i class="fas fa-info-circle" style="margin-left:6px;color:var(--gold);"></i> بيانات الفاتورة</h3>
+                    <span style="font-size:0.72rem;color:var(--text-muted);">الحقول المطلوبة *</span>
+                </div>
+                <div class="data-card-body">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label><i class="fas fa-user" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> العميل *</label>
+                            <div class="autocomplete-wrap">
+                                <input type="text" id="customerInput" class="form-control" placeholder="ابحث عن العميل..." autocomplete="off" required {% if invoice %}value="{{ invoice.customer.name }}" readonly{% endif %}>
+                                <input type="hidden" name="customer_id" id="customerId" {% if invoice %}value="{{ invoice.customer_id }}"{% endif %}>
+                                <div class="autocomplete-dropdown" id="customerDropdown"></div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label><i class="fas fa-shipping-fast" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> شركة الشحن</label>
+                            <div class="autocomplete-wrap">
+                                <input type="text" name="shipping_company" id="shippingInput" class="form-control" placeholder="ابحث عن شركة الشحن..." autocomplete="off" {% if invoice and invoice.shipping_company %}value="{{ invoice.shipping_company }}"{% endif %}>
+                                <div class="autocomplete-dropdown" id="shippingDropdown"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label><i class="fas fa-credit-card" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> نوع الدفع *</label>
+                            <select name="payment_type" class="form-control" id="paymentType" required onchange="togglePaymentFields()">
+                                {% for key, label in PAYMENT_TYPES.items() %}
+                                <option value="{{ key }}" {% if invoice and invoice.payment_type == key %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group" id="paymentMethodGroup" style="display:none;">
+                            <label><i class="fas fa-wallet" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> طريقة الدفع</label>
+                            <select name="payment_method" class="form-control">
+                                {% for key, label in PAYMENT_METHODS.items() %}
+                                <option value="{{ key }}" {% if invoice and invoice.payment_method == key %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group" id="downPaymentGroup" style="display:none;">
+                            <label><i class="fas fa-hand-holding-usd" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> مبلغ المقدم</label>
+                            <input type="number" name="down_payment" class="form-control" min="0" step="any" placeholder="0" value="{% if invoice and invoice.payment_type == 'installment' %}{{ invoice.paid_amount or 0 }}{% else %}0{% endif %}">
+                        </div>
+                        <div class="form-group">
+                            <label><i class="fas fa-camera" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> صورة الايصال</label>
+                            <input type="file" name="receipt_image" class="form-control" accept="image/png,image/jpeg,image/webp,image/gif">
+                            {% if invoice and invoice.receipt_image %}
+                            <a href="{{ url_for('static', filename='uploads/receipts/' + invoice.receipt_image) }}" target="_blank" style="font-size:0.75rem;color:var(--navy);"><i class="fas fa-image"></i> عرض الايصال الحالي</a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="form-row" id="installmentFields" style="display:none;margin-bottom:0;">
+                        <div class="form-group">
+                            <label><i class="fas fa-list-ol" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> عدد الاقساط (بالاشهر)</label>
+                            <input type="number" name="installment_count" class="form-control" min="1" value="{% if installment_plan %}{{ installment_plan.installment_count }}{% else %}12{% endif %}">
+                        </div>
+                        <div class="form-group">
+                            <label><i class="fas fa-calendar-alt" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> تاريخ اول قسط</label>
+                            <input type="date" name="installment_start_date" class="form-control" {% if installment_plan and installment_plan.start_date %}value="{{ installment_plan.start_date.strftime('%Y-%m-%d') }}"{% endif %}>
+                        </div>
+                    </div>
+                    <div class="form-row" style="margin-bottom:0;">
+                        <div class="form-group" style="display:flex;align-items:center;gap:12px;flex-basis:100%;">
+                            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;white-space:nowrap;">
+                                <input type="checkbox" id="showBalanceCheck" name="show_balance" onchange="toggleCustomerBalance()" {% if invoice and invoice.show_balance %}checked{% endif %} style="width:18px;height:18px;accent-color:var(--gold);cursor:pointer;">
+                                <i class="fas fa-wallet" style="color:var(--gold);font-size:0.85rem;"></i>
+                                عرض مبالغ العميل المستحقة
+                            </label>
+                        </div>
+                    </div>
+                    <div id="customerBalanceBox" style="display:none;margin-top:10px;padding:12px 16px;background:linear-gradient(135deg,#fef9ee,#fff8e6);border:1px solid rgba(207,163,64,0.25);border-radius:var(--radius-sm);direction:rtl;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                            <i class="fas fa-receipt" style="color:var(--navy);font-size:0.9rem;"></i>
+                            <span style="font-weight:700;color:var(--navy);font-size:0.88rem;">اجمالي المستحقات</span>
+                        </div>
+                        <div id="balanceTotal" style="font-size:1.4rem;font-weight:800;color:#dc3545;margin-bottom:10px;"></div>
+                        <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+                            <thead>
+                                <tr style="border-bottom:2px solid var(--gold);">
+                                    <th style="padding:6px 8px;text-align:right;color:var(--navy);">فاتورة</th>
+                                    <th style="padding:6px 8px;text-align:right;color:var(--navy);">الاجمالي</th>
+                                    <th style="padding:6px 8px;text-align:right;color:var(--navy);">المدفوع</th>
+                                    <th style="padding:6px 8px;text-align:right;color:#dc3545;font-weight:700;">المتبقي</th>
+                                </tr>
+                            </thead>
+                            <tbody id="balanceDetails"></tbody>
+                        </table>
+                        <div id="balanceEmpty" style="display:none;text-align:center;padding:12px;color:#999;font-size:0.85rem;">
+                            <i class="fas fa-check-circle" style="color:#28a745;margin-left:4px;"></i> لا توجد مستحقات على هذا العميل
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="data-card">
+                <div class="data-card-header">
+                    <h3><i class="fas fa-boxes" style="margin-left:6px;color:var(--gold);"></i> اصناف الفاتورة</h3>
+                    <button type="button" class="btn btn-gold btn-sm" onclick="addRow()"><i class="fas fa-plus"></i> اضافة صنف</button>
+                </div>
+                <div class="data-card-body" style="padding:16px;">
+                    <div class="item-row invoice-row header">
+                        <span>#</span>
+                        <span>اسم الصنف</span>
+                        <span>الفئة</span>
+                        <span>الكمية</span>
+                        <span>سعر الوحدة</span>
+                        <span>الاجمالي</span>
+                        <span></span>
+                    </div>
+                    <div id="itemsBody">
+                        {% if invoice and invoice.items %}
+                        {% for item in invoice.items %}
+                        <div class="item-row invoice-row" data-index="{{ loop.index0 }}">
+                            <span>{{ loop.index }}</span>
+                            <div class="autocomplete-wrap">
+                                <input type="text" name="item_name_{{ loop.index0 }}" class="form-control item-name-input" placeholder="اسم الصنف" autocomplete="off" value="{{ item.item_name }}">
+                                <div class="autocomplete-dropdown"></div>
+                            </div>
+                            <input type="text" name="item_unit_{{ loop.index0 }}" class="unit-type-input item-unit" value="{{ item.unit_type or 'ق' }}" readonly>
+                            <input type="number" name="item_qty_{{ loop.index0 }}" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)" value="{{ item.quantity }}">
+                            <input type="number" name="item_price_{{ loop.index0 }}" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this)" value="{{ item.unit_price }}">
+                            <span class="row-total">{{ "{:,.0f}".format(item.total or 0) }}</span>
+                            <button type="button" class="btn-remove" onclick="removeRow(this)">x</button>
+                        </div>
+                        {% endfor %}
+                        {% else %}
+                        <div class="item-row invoice-row" data-index="0">
+                            <span>1</span>
+                            <div class="autocomplete-wrap">
+                                <input type="text" name="item_name_0" class="form-control item-name-input" placeholder="اسم الصنف" autocomplete="off">
+                                <div class="autocomplete-dropdown"></div>
+                            </div>
+                            <input type="text" name="item_unit_0" class="unit-type-input item-unit" value="ق" readonly>
+                            <input type="number" name="item_qty_0" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)">
+                            <input type="number" name="item_price_0" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this)">
+                            <span class="row-total">0</span>
+                            <button type="button" class="btn-remove" onclick="removeRow(this)">x</button>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="grand-total">
+                <span class="total-label">الاجمالي الكلي</span>
+                <span class="total-value" id="grandTotal">0 ج.م</span>
+            </div>
+
+            <div class="data-card" style="margin-top:0;">
+                <div class="data-card-header">
+                    <h3><i class="fas fa-percentage" style="margin-left:6px;color:var(--gold);"></i> خصم الفاتورة</h3>
+                </div>
+                <div class="data-card-body">
+                    <div class="form-row" style="margin-bottom:0;">
+                        <div class="form-group" style="flex:1;">
+                            <label>مبلغ الخصم (ج.م)</label>
+                            <input type="number" name="discount" id="discountInput" class="form-control" min="0" step="any" placeholder="0" value="{% if invoice %}{{ invoice.discount or 0 }}{% endif %}" oninput="applyDiscount()">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>الاجمالي بعد الخصم</label>
+                            <div id="finalTotal" style="font-size:1.3rem;font-weight:800;color:var(--navy);padding:10px 0;">0 ج.م</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:20px;">
+            <div class="data-card">
+                <div class="data-card-header">
+                    <h3><i class="fas fa-sticky-note" style="margin-left:6px;color:var(--gold);"></i> ملاحظات</h3>
+                </div>
+                <div class="data-card-body">
+                    <textarea name="notes" class="form-control" rows="5" placeholder="ملاحظات اضافية..." style="resize:vertical;">{% if invoice %}{{ invoice.notes or '' }}{% endif %}</textarea>
+                </div>
+            </div>
+
+            <div class="data-card" style="border:none;box-shadow:none;background:transparent;">
+                <button type="submit" class="btn btn-gold btn-lg" style="width:100%;">
+                    <i class="fas fa-save"></i> {% if invoice %}حفظ التعديلات{% else %}حفظ الفاتورة{% endif %}
+                </button>
+                <div style="margin-top:12px;padding:12px 16px;background:var(--success-bg);border-radius:var(--radius-xs);border:1px solid rgba(16,185,129,0.12);">
+                    <div style="display:flex;align-items:center;gap:8px;font-size:0.78rem;color:var(--success);font-weight:500;">
+                        <i class="fas fa-shield-alt"></i>
+                        <span>جميع البيانات مشفرة ومؤمنة</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</form>
+
+<style>
+.autocomplete-wrap { position: relative; }
+.autocomplete-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    background: #fff;
+    border: 1.5px solid var(--gold);
+    border-top: none;
+    border-radius: 0 0 var(--radius-xs) var(--radius-xs);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+    z-index: 50;
+    max-height: 220px;
+    overflow-y: auto;
+}
+.autocomplete-dropdown.show { display: block; }
+.autocomplete-item {
+    padding: 9px 14px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    color: var(--text);
+    border-bottom: 1px solid var(--border-light);
+    transition: background 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.autocomplete-item:last-child { border-bottom: none; }
+.autocomplete-item:hover,
+.autocomplete-item.active {
+    background: var(--gold-glow);
+    color: var(--gold-dark);
+}
+.autocomplete-item .item-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: var(--navy);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    flex-shrink: 0;
+}
+.autocomplete-empty {
+    padding: 12px 14px;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    text-align: center;
+}
+</style>
+
+<script>
+function togglePaymentFields() {
+    var pt = document.getElementById('paymentType').value;
+    var pmGroup = document.getElementById('paymentMethodGroup');
+    var dpGroup = document.getElementById('downPaymentGroup');
+    var instFields = document.getElementById('installmentFields');
+    if (pt === 'installment') {
+        pmGroup.style.display = '';
+        dpGroup.style.display = '';
+        instFields.style.display = '';
+    } else if (pt === 'cash') {
+        pmGroup.style.display = '';
+        dpGroup.style.display = 'none';
+        instFields.style.display = 'none';
+    } else {
+        pmGroup.style.display = 'none';
+        dpGroup.style.display = 'none';
+        instFields.style.display = 'none';
+    }
+}
+togglePaymentFields();
+
+function toggleCustomerBalance() {
+    var box = document.getElementById('customerBalanceBox');
+    var check = document.getElementById('showBalanceCheck');
+    var custId = document.getElementById('customerId').value;
+    if (!check.checked) { box.style.display = 'none'; return; }
+    if (!custId) {
+        box.style.display = '';
+        document.getElementById('balanceTotal').textContent = '0 ج.م';
+        document.getElementById('balanceDetails').innerHTML = '';
+        document.getElementById('balanceEmpty').style.display = 'block';
+        return;
+    }
+    box.style.display = '';
+    document.getElementById('balanceTotal').textContent = 'جاري التحميل...';
+    document.getElementById('balanceDetails').innerHTML = '';
+    document.getElementById('balanceEmpty').style.display = 'none';
+    fetch('/api/customer-balance?customer_id=' + custId)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            document.getElementById('balanceTotal').textContent =
+                data.total_remaining.toLocaleString('ar-EG') + ' ج.م';
+            var tbody = document.getElementById('balanceDetails');
+            tbody.innerHTML = '';
+            if (data.invoices.length === 0) {
+                document.getElementById('balanceEmpty').style.display = '';
+            } else {
+                data.invoices.forEach(function(inv) {
+                    var tr = document.createElement('tr');
+                    tr.style.borderBottom = '1px solid #eee';
+                    tr.innerHTML =
+                        '<td style="padding:6px 8px;color:var(--text);">' + inv.invoice_number + '</td>' +
+                        '<td style="padding:6px 8px;">' + inv.total.toLocaleString('ar-EG') + '</td>' +
+                        '<td style="padding:6px 8px;color:#28a745;">' + inv.paid.toLocaleString('ar-EG') + '</td>' +
+                        '<td style="padding:6px 8px;color:#dc3545;font-weight:700;">' + inv.remaining.toLocaleString('ar-EG') + '</td>';
+                    tbody.appendChild(tr);
+                });
+            }
+        });
+}
+
+let rowIndex = {{ invoice.items|length if invoice and invoice.items else 0 }} - 1;
+let activeDropdown = null;
+let activeIndex = -1;
+
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('.autocomplete-wrap')) {
+        closeAllDropdowns();
+    }
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeAllDropdowns();
+    }
+});
+
+function closeAllDropdowns() {
+    document.querySelectorAll('.autocomplete-dropdown').forEach(d => {
+        d.classList.remove('show');
+        d.innerHTML = '';
+    });
+    activeDropdown = null;
+    activeIndex = -1;
+}
+
+function addRow(focusField) {
+    rowIndex++;
+    const container = document.getElementById('itemsBody');
+    const div = document.createElement('div');
+    div.className = 'item-row invoice-row';
+    div.dataset.index = rowIndex;
+    div.innerHTML = `
+        <span>${rowIndex + 1}</span>
+        <div class="autocomplete-wrap">
+            <input type="text" name="item_name_${rowIndex}" class="form-control item-name-input" placeholder="اسم الصنف" autocomplete="off">
+            <div class="autocomplete-dropdown"></div>
+        </div>
+        <input type="text" name="item_unit_${rowIndex}" class="unit-type-input item-unit" value="ق" readonly>
+        <input type="number" name="item_qty_${rowIndex}" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)">
+        <input type="number" name="item_price_${rowIndex}" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this)">
+        <span class="row-total">0</span>
+        <button type="button" class="btn-remove" onclick="removeRow(this)">x</button>
+    `;
+    container.appendChild(div);
+    bindAutocomplete(div.querySelector('.item-name-input'));
+    bindTabNavigation(div);
+    bindUnitToggle(div.querySelector('.item-unit'));
+    bindArrowNav(div);
+    if (focusField) {
+        const target = focusField === 'name' ? div.querySelector('.item-name-input') : div.querySelector('.item-' + focusField);
+        if (target) {
+            setTimeout(function() { target.focus(); }, 0);
+        }
+    }
+    calcGrandTotal();
+}
+
+function removeRow(btn) {
+    const container = document.getElementById('itemsBody');
+    if (container.children.length > 1) {
+        btn.closest('.item-row').remove();
+        renumber();
+        calcGrandTotal();
+    }
+}
+
+function bindTabNavigation(row) {
+    var priceInput = row.querySelector('.item-price');
+    if (priceInput) {
+        priceInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Tab' && !e.shiftKey) {
+                e.preventDefault();
+                addRow('name');
+            }
+        });
+    }
+}
+
+function bindUnitToggle(input) {
+    if (!input) return;
+    var units = ['ق', 'ك', 'ع'];
+    input.addEventListener('click', function() {
+        var idx = units.indexOf(this.value);
+        this.value = units[(idx + 1) % units.length];
+    });
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            var idx = units.indexOf(this.value);
+            this.value = units[(idx + 1) % units.length];
+        }
+    });
+}
+
+function renumber() {
+    document.querySelectorAll('#itemsBody .item-row').forEach((r, i) => {
+        r.querySelector('span').textContent = i + 1;
+    });
+}
+
+function calcRow(el) {
+    const row = el.closest('.item-row');
+    const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+    const price = parseFloat(row.querySelector('.item-price').value) || 0;
+    row.querySelector('.row-total').textContent = (qty * price).toLocaleString('ar-EG');
+    calcGrandTotal();
+}
+
+function calcGrandTotal() {
+    let total = 0;
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+        const price = parseFloat(row.querySelector('.item-price').value) || 0;
+        total += qty * price;
+    });
+    document.getElementById('grandTotal').textContent = total.toLocaleString('ar-EG') + ' ج.م';
+    applyDiscount();
+}
+
+function applyDiscount() {
+    let total = 0;
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+        const price = parseFloat(row.querySelector('.item-price').value) || 0;
+        total += qty * price;
+    });
+    const discount = parseFloat(document.getElementById('discountInput').value) || 0;
+    const final = Math.max(0, total - discount);
+    document.getElementById('finalTotal').textContent = final.toLocaleString('ar-EG') + ' ج.م';
+}
+
+let searchTimeout = null;
+
+function bindAutocomplete(input) {
+    input.addEventListener('input', function() {
+        const wrap = this.closest('.autocomplete-wrap');
+        const dropdown = wrap.querySelector('.autocomplete-dropdown');
+        const query = this.value.trim();
+
+        if (activeDropdown && activeDropdown !== dropdown) {
+            activeDropdown.classList.remove('show');
+            activeDropdown.innerHTML = '';
+        }
+        activeDropdown = dropdown;
+        activeIndex = -1;
+
+        if (query.length < 1) {
+            dropdown.classList.remove('show');
+            dropdown.innerHTML = '';
+            return;
+        }
+
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(function() {
+            fetch('/api/search-items?q=' + encodeURIComponent(query))
+                .then(r => r.json())
+                .then(names => {
+                    if (names.length === 0) {
+                        dropdown.innerHTML = '<div class="autocomplete-empty">لا توجد اصناف مطابقة</div>';
+                        dropdown.classList.add('show');
+                        return;
+                    }
+                    dropdown.innerHTML = names.map((name, i) =>
+                        `<div class="autocomplete-item" data-index="${i}">
+                            <span class="item-icon"><i class="fas fa-box"></i></span>
+                            <span>${name}</span>
+                        </div>`
+                    ).join('');
+                    dropdown.classList.add('show');
+
+                    dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+                        item.addEventListener('mousedown', function(e) {
+                            e.preventDefault();
+                            const selectedName = this.querySelector('span:last-child').textContent;
+                            input.value = selectedName;
+                            dropdown.classList.remove('show');
+                            dropdown.innerHTML = '';
+                            fetchItemPrice(selectedName, input.closest('.item-row'));
+                            input.closest('.item-row').querySelector('.item-qty').focus();
+                        });
+                    });
+                });
+        }, 250);
+    });
+
+    input.addEventListener('keydown', function(e) {
+        const wrap = this.closest('.autocomplete-wrap');
+        const dropdown = wrap.querySelector('.autocomplete-dropdown');
+        const items = dropdown.querySelectorAll('.autocomplete-item');
+
+        if (!dropdown.classList.contains('show') || items.length === 0) return;
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            activeIndex = Math.min(activeIndex + 1, items.length - 1);
+            items.forEach((it, i) => it.classList.toggle('active', i === activeIndex));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            activeIndex = Math.max(activeIndex - 1, 0);
+            items.forEach((it, i) => it.classList.toggle('active', i === activeIndex));
+        } else if (e.key === 'Enter' && activeIndex >= 0) {
+            e.preventDefault();
+            const selected = items[activeIndex];
+            const selectedName = selected.querySelector('span:last-child').textContent;
+            this.value = selectedName;
+            dropdown.classList.remove('show');
+            dropdown.innerHTML = '';
+            fetchItemPrice(selectedName, this.closest('.item-row'));
+            this.closest('.item-row').querySelector('.item-qty').focus();
+        }
+    });
+
+    input.addEventListener('blur', function() {
+        setTimeout(() => {
+            const wrap = this.closest('.autocomplete-wrap');
+            if (wrap) {
+                wrap.querySelector('.autocomplete-dropdown').classList.remove('show');
+            }
+        }, 200);
+    });
+}
+
+function fetchItemPrice(name, row) {
+    fetch('/api/item-price?name=' + encodeURIComponent(name))
+        .then(r => r.json())
+        .then(data => {
+            if (data.found && data.selling_price > 0) {
+                const priceInput = row.querySelector('.item-price');
+                if (priceInput && !priceInput.value) {
+                    priceInput.value = data.selling_price;
+                    calcRow(priceInput);
+                }
+            }
+        });
+}
+
+document.querySelectorAll('.item-name-input').forEach(input => {
+    bindAutocomplete(input);
+});
+document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+    bindTabNavigation(row);
+});
+document.querySelectorAll('.item-unit').forEach(input => {
+    bindUnitToggle(input);
+});
+
+var GRID_COLS_INVOICE = ['.item-name-input', '.item-unit', '.item-qty', '.item-price'];
+
+function bindArrowNav(row) {
+    var inputs = GRID_COLS_INVOICE.map(function(sel) { return row.querySelector(sel); }).filter(Boolean);
+    inputs.forEach(function(inp, idx) {
+        inp.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowRight' && idx < inputs.length - 1) {
+                var wrap = inp.closest('.autocomplete-wrap');
+                if (wrap && wrap.querySelector('.autocomplete-dropdown.show')) return;
+                e.preventDefault();
+                inputs[idx + 1].focus();
+            } else if (e.key === 'ArrowLeft' && idx > 0) {
+                e.preventDefault();
+                inputs[idx - 1].focus();
+            } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                var wrap = inp.closest('.autocomplete-wrap');
+                if (wrap && wrap.querySelector('.autocomplete-dropdown.show')) return;
+                if (idx === 0 && inp.value.trim().length > 0 && inp.matches(':focus')) {
+                    if (!wrap || !wrap.querySelector('.autocomplete-dropdown.show')) return;
+                }
+                var allRows = Array.from(document.getElementById('itemsBody').querySelectorAll('.item-row'));
+                var rowIdx = allRows.indexOf(row);
+                if (e.key === 'ArrowDown' && rowIdx < allRows.length - 1) {
+                    e.preventDefault();
+                    var target = allRows[rowIdx + 1].querySelector(GRID_COLS_INVOICE[idx]);
+                    if (target) { target.focus(); target.setSelectionRange(0, 0); }
+                } else if (e.key === 'ArrowUp' && rowIdx > 0) {
+                    e.preventDefault();
+                    var target = allRows[rowIdx - 1].querySelector(GRID_COLS_INVOICE[idx]);
+                    if (target) { target.focus(); target.setSelectionRange(0, 0); }
+                }
+            }
+        });
+    });
+}
+
+document.querySelectorAll('#itemsBody .item-row').forEach(function(row) {
+    bindArrowNav(row);
+});
+
+(function() {
+    const input = document.getElementById('customerInput');
+    const hidden = document.getElementById('customerId');
+    const dropdown = document.getElementById('customerDropdown');
+    const lockBanner = document.getElementById('lockBanner');
+    let searchTimer = null;
+    let custActiveIndex = -1;
+    let currentCustomerId = null;
+    let lockHeartbeat = null;
+    let lockAcquired = false;
+
+    function showBlockedBanner(name) {
+        lockBanner.style.display = 'block';
+        lockBanner.style.background = 'linear-gradient(135deg,#fff5f5,#fed7d7)';
+        lockBanner.style.color = '#c53030';
+        lockBanner.style.border = '2px solid #fc8181';
+        lockBanner.innerHTML = '<i class="fas fa-lock" style="margin-left:8px;"></i> لا يمكنك عمل فاتورة لهذا العميل الآن! الموظف <strong>' + name + '</strong> يقوم باصدار فاتورة لهذا العميل في الوقت الحالي.';
+        document.getElementById('invoiceForm').querySelector('[type=submit"]').disabled = true;
+    }
+
+    function hideLockBanner() {
+        lockBanner.style.display = 'none';
+        document.getElementById('invoiceForm').querySelector('[type=submit"]').disabled = false;
+    }
+
+    function acquireLock(entityId) {
+        fetch('/api/lock-entity', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({type: 'customer', id: entityId})
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.locked && data.owner === 'self') {
+                lockAcquired = true;
+                hideLockBanner();
+                startHeartbeat(entityId);
+            } else if (!data.locked && data.held_by) {
+                lockAcquired = false;
+                showBlockedBanner(data.held_by);
+            }
+        });
+    }
+
+    function releaseLock() {
+        if (currentCustomerId && lockAcquired) {
+            navigator.sendBeacon('/api/unlock-entity', JSON.stringify({type: 'customer', id: currentCustomerId}));
+            lockAcquired = false;
+        }
+        stopHeartbeat();
+    }
+
+    function startHeartbeat(entityId) {
+        stopHeartbeat();
+        lockHeartbeat = setInterval(function() {
+            fetch('/api/heartbeat-entity', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({type: 'customer', id: entityId})
+            });
+        }, 15000);
+    }
+
+    function stopHeartbeat() {
+        if (lockHeartbeat) { clearInterval(lockHeartbeat); lockHeartbeat = null; }
+    }
+
+    function onCustomerSelected(id) {
+        if (currentCustomerId && currentCustomerId != id) { releaseLock(); }
+        currentCustomerId = id;
+        acquireLock(id);
+        if (document.getElementById('showBalanceCheck').checked) { toggleCustomerBalance(); }
+    }
+
+    window.releaseInvoiceLock = releaseLock;
+
+    input.addEventListener('input', function() {
+        const q = this.value.trim();
+        custActiveIndex = -1;
+        if (q.length < 1) { dropdown.classList.remove('show'); hidden.value = ''; currentCustomerId = null; releaseLock(); hideLockBanner(); document.getElementById('customerBalanceBox').style.display = 'none'; document.getElementById('showBalanceCheck').checked = false; return; }
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(function() {
+            fetch('/api/search-customers?q=' + encodeURIComponent(q))
+                .then(r => r.json())
+                .then(list => {
+                    if (list.length === 0) {
+                        dropdown.innerHTML = '<div class="autocomplete-empty">لا توجد نتائج</div>';
+                        dropdown.classList.add('show');
+                        return;
+                    }
+                    dropdown.innerHTML = list.map((c, i) =>
+                        `<div class="autocomplete-item" data-id="${c.id}" data-index="${i}">
+                            <span class="item-icon"><i class="fas fa-user"></i></span>
+                            <span>${c.name}${c.phone ? ' - ' + c.phone : ''}</span>
+                        </div>`
+                    ).join('');
+                    dropdown.classList.add('show');
+                    dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+                        item.addEventListener('mousedown', function(e) {
+                            e.preventDefault();
+                            input.value = this.querySelector('span:last-child').textContent;
+                            hidden.value = this.dataset.id;
+                            dropdown.classList.remove('show');
+                            onCustomerSelected(parseInt(this.dataset.id));
+                        });
+                    });
+                });
+        }, 250);
+    });
+
+    input.addEventListener('keydown', function(e) {
+        const items = dropdown.querySelectorAll('.autocomplete-item');
+        if (!dropdown.classList.contains('show') || items.length === 0) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            custActiveIndex = Math.min(custActiveIndex + 1, items.length - 1);
+            items.forEach((it, i) => it.classList.toggle('active', i === custActiveIndex));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            custActiveIndex = Math.max(custActiveIndex - 1, 0);
+            items.forEach((it, i) => it.classList.toggle('active', i === custActiveIndex));
+        } else if (e.key === 'Enter' && custActiveIndex >= 0) {
+            e.preventDefault();
+            const sel = items[custActiveIndex];
+            input.value = sel.querySelector('span:last-child').textContent;
+            hidden.value = sel.dataset.id;
+            dropdown.classList.remove('show');
+            onCustomerSelected(parseInt(sel.dataset.id));
+        }
+    });
+
+    input.addEventListener('blur', function() {
+        setTimeout(() => dropdown.classList.remove('show'), 200);
+    });
+
+    window.addEventListener('beforeunload', function() {
+        releaseLock();
+    });
+
+    document.getElementById('invoiceForm').addEventListener('submit', function() {
+        if (!lockAcquired && currentCustomerId) {
+            alert('لا يمكنك حفظ الفاتورة. العميل مقفل من قبل موظف آخر.');
+            return false;
+        }
+    });
+})();
+
+(function() {
+    const input = document.getElementById('shippingInput');
+    const dropdown = document.getElementById('shippingDropdown');
+    let searchTimer = null;
+    let shipActiveIndex = -1;
+
+    input.addEventListener('input', function() {
+        const q = this.value.trim();
+        shipActiveIndex = -1;
+        if (q.length < 1) { dropdown.classList.remove('show'); return; }
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(function() {
+            fetch('/api/search-shipping?q=' + encodeURIComponent(q))
+                .then(r => r.json())
+                .then(list => {
+                    if (list.length === 0) {
+                        dropdown.innerHTML = '<div class="autocomplete-empty">لا توجد نتائج</div>';
+                        dropdown.classList.add('show');
+                        return;
+                    }
+                    dropdown.innerHTML = list.map((s, i) =>
+                        `<div class="autocomplete-item" data-index="${i}">
+                            <span class="item-icon"><i class="fas fa-shipping-fast"></i></span>
+                            <span>${s.name}${s.phone ? ' - ' + s.phone : ''}</span>
+                        </div>`
+                    ).join('');
+                    dropdown.classList.add('show');
+                    dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+                        item.addEventListener('mousedown', function(e) {
+                            e.preventDefault();
+                            input.value = this.querySelector('span:last-child').textContent.split(' - ')[0];
+                            dropdown.classList.remove('show');
+                        });
+                    });
+                });
+        }, 250);
+    });
+
+    input.addEventListener('keydown', function(e) {
+        const items = dropdown.querySelectorAll('.autocomplete-item');
+        if (!dropdown.classList.contains('show') || items.length === 0) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            shipActiveIndex = Math.min(shipActiveIndex + 1, items.length - 1);
+            items.forEach((it, i) => it.classList.toggle('active', i === shipActiveIndex));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            shipActiveIndex = Math.max(shipActiveIndex - 1, 0);
+            items.forEach((it, i) => it.classList.toggle('active', i === shipActiveIndex));
+        } else if (e.key === 'Enter' && shipActiveIndex >= 0) {
+            e.preventDefault();
+            const sel = items[shipActiveIndex];
+            input.value = sel.querySelector('span:last-child').textContent.split(' - ')[0];
+            dropdown.classList.remove('show');
+        }
+    });
+
+    input.addEventListener('blur', function() {
+        setTimeout(() => dropdown.classList.remove('show'), 200);
+    });
+})();
+
+    if (document.getElementById('showBalanceCheck').checked) { toggleCustomerBalance(); }
+</script>
+{% endblock %}

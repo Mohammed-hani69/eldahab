@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-header">
+    <h1 style="font-size:1.3rem;font-weight:700;color:var(--text);margin:0;"><i class="fas fa-shopping-cart" style="margin-left:8px;"></i> امر شراء #{{ purchase.purchase_number }}</h1>
+    <a href="{{ url_for('purchases_list') }}" class="btn btn-ghost"><i class="fas fa-arrow-right" style="margin-left:4px;"></i> رجوع للمشتريات</a>
+</div>
+
+<div class="invoice-print" id="printArea">
+    <div class="invoice-print-header compact-header">
+        <div>
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="compact-logo">
+        </div>
+        <div style="text-align:center;">
+            <div class="company-name">El Dahab Trading</div>
+            <div style="font-size:0.95rem;font-weight:700;color:#fff;margin-top:2px;">امر شراء</div>
+        </div>
+        <div style="text-align:left;display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+            <div style="font-size:1.2rem;font-weight:900;color:var(--gold);">{{ purchase.purchase_number }}</div>
+            <svg id="purchaseBarcode" style="max-width:140px;height:30px;"></svg>
+        </div>
+    </div>
+    <div class="invoice-info compact-info">
+        <div><strong>المورد:</strong> {{ purchase.supplier.name }}</div>
+        <div><strong>التاريخ:</strong> {{ purchase.date.strftime('%Y-%m-%d') }}</div>
+    </div>
+    <div class="compact-payment-bar">
+        <span style="font-size:0.78rem;color:var(--text-secondary);">نوع الدفع:</span>
+        {% if purchase.payment_type == 'cash' %}
+        <span class="badge badge-success"><i class="fas fa-money-bill" style="margin-left:2px;"></i> نقداً</span>
+        {% elif purchase.payment_type == 'credit' %}
+        <span class="badge badge-warning" style="background:rgba(245,158,11,0.12);color:#b45309;"><i class="fas fa-clock" style="margin-left:2px;"></i> بالاجل</span>
+        <span style="font-size:0.78rem;font-weight:700;">المتبقي: {{ "{:,.0f}".format(purchase.remaining or 0) }} ج.م</span>
+        {% elif purchase.payment_type == 'installment' %}
+        <span class="badge badge-info"><i class="fas fa-calendar-check" style="margin-left:2px;"></i> تقسيط</span>
+        <span style="font-size:0.78rem;">المقدم: {{ "{:,.0f}".format(purchase.paid_amount or 0) }} ج.م | المتبقي: {{ "{:,.0f}".format(purchase.remaining or 0) }} ج.م</span>
+        {% endif %}
+        {% if purchase.payment_type in ('cash', 'installment') and PAYMENT_METHODS.get(purchase.payment_method) %}
+        <span style="font-size:0.78rem;color:var(--text-secondary);">| طريقة الدفع:</span>
+        <span class="badge badge-gold">{{ PAYMENT_METHODS.get(purchase.payment_method) }}</span>
+        {% endif %}
+        {% if purchase.receipt_image %}
+        <a href="{{ url_for('static', filename='uploads/receipts/' + purchase.receipt_image) }}" target="_blank" class="badge badge-navy" style="text-decoration:none;"><i class="fas fa-image" style="margin-left:2px;"></i> صورة الايصال</a>
+        {% endif %}
+    </div>
+
+    <div class="invoice-items-area">
+        <table class="compact-table">
+            <thead>
+                <tr>
+                    <th style="width:40px;">#</th>
+                    <th>اسم الصنف</th>
+                    <th style="width:50px;">الفئة</th>
+                    <th style="width:70px;">الكمية</th>
+                    <th style="width:100px;">سعر الشراء</th>
+                    <th style="width:100px;">سعر البيع</th>
+                    <th style="width:110px;">الاجمالي</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in purchase.items %}
+                <tr class="{% if loop.index % 20 == 0 and not loop.last %}page-break-row{% endif %}">
+                    <td>{{ loop.index }}</td>
+                    <td style="font-weight:600;">{{ item.item_name }}</td>
+                    <td style="text-align:center;">{{ item.unit_type or 'ق' }}</td>
+                    <td>{{ item.quantity }}</td>
+                    <td>{{ "{:,.0f}".format(item.unit_price or 0) }} ج.م</td>
+                    <td>{{ "{:,.0f}".format(item.selling_price or 0) }} ج.م</td>
+                    <td style="font-weight:700;">{{ "{:,.0f}".format(item.total or 0) }} ج.م</td>
+                </tr>
+                {% endfor %}
+                {% if not purchase.items %}
+                <tr><td colspan="7" style="text-align:center;padding:20px;color:#999;">لا توجد اصناف</td></tr>
+                {% endif %}
+                {% if purchase.items|length > 0 %}
+                <tr class="invoice-page-footer">
+                    <td colspan="7">
+                        <div class="page-footer-inner">
+                            <span>صفحة 1</span>
+                            <span>{{ purchase.purchase_number }} - El Dahab Trading</span>
+                            <span>{{ purchase.items|length }} صنف</span>
+                        </div>
+                    </td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <div style="padding:0 16px 14px;">
+        <div class="grand-total compact-total">
+            <span class="total-label">الاجمالي الكلي</span>
+            <span class="total-value">{{ "{:,.0f}".format(purchase.total or 0) }} ج.م</span>
+        </div>
+    </div>
+
+    {% if supplier_installment_plan %}
+    <div style="padding:0 16px 14px;">
+        <div style="border:2px solid var(--info);border-radius:8px;overflow:hidden;">
+            <div style="background:var(--info);color:#fff;padding:8px 12px;font-weight:800;font-size:0.82rem;"><i class="fas fa-calendar-check" style="margin-left:4px;"></i> جدول التقسيط</div>
+            <div style="padding:10px 12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;background:var(--info-bg);">
+                <div><span style="font-size:0.72rem;color:var(--text-secondary);">رقم الخطة</span><div style="font-weight:700;font-size:0.82rem;">{{ supplier_installment_plan.plan_number }}</div></div>
+                <div><span style="font-size:0.72rem;color:var(--text-secondary);">المقدم</span><div style="font-weight:700;font-size:0.82rem;">{{ "{:,.0f}".format(supplier_installment_plan.down_payment or 0) }} ج.م</div></div>
+                <div><span style="font-size:0.72rem;color:var(--text-secondary);">عدد الاقساط</span><div style="font-weight:700;font-size:0.82rem;">{{ supplier_installment_plan.installment_count }} اشهر</div></div>
+                <div><span style="font-size:0.72rem;color:var(--text-secondary);">القسط الشهري</span><div style="font-weight:700;font-size:0.82rem;">{{ "{:,.0f}".format(supplier_installment_plan.installment_amount or 0) }} ج.م</div></div>
+                <div><span style="font-size:0.72rem;color:var(--text-secondary);">المتبقي</span><div style="font-weight:700;font-size:0.82rem;color:var(--danger);">{{ "{:,.0f}".format(supplier_installment_plan.remaining or 0) }} ج.م</div></div>
+            </div>
+            {% if installments %}
+            <table class="compact-table">
+                <thead><tr><th>قسط #</th><th>المبلغ</th><th>تاريخ الاستحقاق</th><th>الحالة</th></tr></thead>
+                <tbody>
+                {% for inst in installments|sort(attribute='number') %}
+                <tr>
+                    <td>{{ inst.number }}</td>
+                    <td>{{ "{:,.0f}".format(inst.amount or 0) }} ج.م</td>
+                    <td>{{ inst.due_date.strftime('%Y-%m-%d') }}</td>
+                    <td>{% if inst.status == 'paid' %}<span class="badge badge-success">مدفوع</span>{% else %}<span class="badge badge-danger">لم يُدفع</span>{% endif %}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<div style="margin-top:20px;display:flex;gap:12px;" class="no-print">
+    <button class="btn btn-gold btn-lg" onclick="window.print();"><i class="fas fa-print"></i> طباعة</button>
+    <a href="{{ url_for('purchases_list') }}" class="btn btn-outline btn-lg"><i class="fas fa-arrow-right"></i> رجوع</a>
+    <form method="POST" action="{{ url_for('purchase_delete', purchase_id=purchase.id) }}" style="display:inline;" onsubmit="return confirm('هل انت متاكد من الحذف؟');">
+        <button type="submit" class="btn btn-danger btn-lg"><i class="fas fa-trash"></i> حذف</button>
+    </form>
+</div>
+
+<style>
+.compact-header { padding: 14px 16px; }
+.compact-logo { width: 36px; height: 36px; border-radius: 8px; }
+.compact-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 16px;
+    padding: 8px 16px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+}
+.compact-info div { font-size: 0.78rem !important; padding: 2px 0; }
+.compact-info strong { color: var(--text); }
+.compact-payment-bar {
+    padding: 6px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.compact-table { width: 100%; border-collapse: collapse; }
+.compact-table thead th {
+    background: var(--navy);
+    color: #fff;
+    padding: 7px 10px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-align: right;
+    white-space: nowrap;
+}
+.compact-table tbody td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border-light);
+    font-size: 0.78rem;
+}
+.compact-table tbody tr:hover { background: rgba(207,163,64,0.03); }
+.compact-total { padding: 10px 16px; }
+.compact-total .total-label { font-size: 0.88rem; }
+.compact-total .total-value { font-size: 1.15rem; }
+.invoice-items-area { border-bottom: 1px solid var(--border); }
+.invoice-page-footer td {
+    padding: 0 !important;
+    border-bottom: 2px solid var(--navy) !important;
+    border-top: 1px solid var(--border) !important;
+}
+.page-footer-inner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    background: var(--bg);
+}
+.page-break-row { border-bottom: 2px solid var(--navy) !important; }
+
+#purchaseBarcode { max-width: 140px; height: 30px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+@media print {
+    @page { margin: 10mm; size: A4; }
+    body { margin: 0; padding: 0; background: #fff; }
+    .no-print { display: none !important; }
+    .sidebar, .mobile-topbar, .sidebar-overlay { display: none !important; }
+    .main-content { margin: 0 !important; padding: 0 !important; }
+    .content-area { padding: 0 !important; }
+
+    .invoice-print {
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        margin: 0;
+        width: 100%;
+    }
+
+    .compact-header {
+        padding: 8px 12px !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .compact-logo { width: 28px !important; height: 28px !important; }
+    .company-name { font-size: 1rem !important; }
+
+    #purchaseBarcode {
+        max-width: 120px !important;
+        height: 22px !important;
+        background: #1a365b !important;
+        padding: 3px 6px !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    #purchaseBarcode path { stroke: #fff !important; }
+
+    .compact-info { gap: 2px 12px; padding: 5px 12px; }
+    .compact-info div { font-size: 0.7rem !important; }
+    .compact-payment-bar { padding: 4px 12px; font-size: 0.72rem; }
+
+    .compact-table thead th {
+        padding: 5px 8px !important;
+        font-size: 0.68rem !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .compact-table tbody td {
+        padding: 4px 8px !important;
+        font-size: 0.72rem !important;
+    }
+
+    .compact-total { padding: 8px 12px !important; }
+    .compact-total .total-label { font-size: 0.8rem !important; }
+    .compact-total .total-value { font-size: 0.95rem !important; }
+
+    .page-break-row td { border-bottom: 2px solid #000 !important; }
+    .invoice-page-footer td {
+        border-bottom: 2px solid #000 !important;
+        border-top: 1px solid #000 !important;
+    }
+    .page-footer-inner {
+        font-size: 0.6rem !important;
+    }
+
+    .badge {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+}
+</style>
+<script>
+JsBarcode("#purchaseBarcode", "{{ purchase.purchase_number }}", {
+    format: "CODE128",
+    width: 1.5,
+    height: 25,
+    displayValue: false,
+    margin: 0,
+    background: "transparent",
+    lineColor: "#fff"
+});
+</script>
+{% endblock %}

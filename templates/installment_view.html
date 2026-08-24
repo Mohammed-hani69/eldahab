@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+    <h1 style="font-size:1.3rem;font-weight:700;color:var(--text);margin-bottom:0;">
+        <i class="fas fa-calendar-check" style="margin-left:8px;"></i> تفاصيل خطة التقسيط #{{ plan.plan_number }}
+    </h1>
+    <a href="{{ url_for('installments_list') }}" class="btn btn-ghost"><i class="fas fa-arrow-right" style="margin-left:4px;"></i> رجوع</a>
+</div>
+
+<div class="profile-header">
+    <h2>{{ plan.customer.name }}</h2>
+    <div class="profile-meta">
+        <span><i class="fas fa-calendar" style="margin-left:4px;"></i> تاريخ البدء: {{ plan.start_date.strftime('%Y-%m-%d') }}</span>
+        <span class="badge {% if plan.status == 'active' %}badge-info{% elif plan.status == 'completed' %}badge-success{% else %}badge-danger{% endif %}" style="background:rgba(255,255,255,0.15);">
+            {{ INSTALLMENT_STATUS.get(plan.status, plan.status) }}
+        </span>
+    </div>
+    <div class="profile-balance">
+        <div class="balance-item">
+            <div class="balance-value">{{ "{:,.0f}".format(plan.total_amount or 0) }}</div>
+            <div class="balance-label">الاجمالي (ج.م)</div>
+        </div>
+        <div class="balance-item">
+            <div class="balance-value">{{ "{:,.0f}".format(plan.down_payment or 0) }}</div>
+            <div class="balance-label">المقدم (ج.م)</div>
+        </div>
+        <div class="balance-item">
+            <div class="balance-value" style="color:{{ '#ff6b6b' if plan.remaining > 0 else '#51cf66' }}">{{ "{:,.0f}".format(plan.remaining or 0) }}</div>
+            <div class="balance-label">المتبقي (ج.م)</div>
+        </div>
+        <div class="balance-item">
+            <div class="balance-value">{{ "{:,.0f}".format(plan.installment_amount or 0) }}</div>
+            <div class="balance-label">القسط الشهري (ج.م)</div>
+        </div>
+    </div>
+</div>
+
+<div class="two-col" style="margin-top:24px;">
+    <div>
+        <div class="data-card">
+            <div class="data-card-header">
+                <h3><i class="fas fa-table" style="margin-left:6px;color:var(--gold);"></i> جدول الاقساط ({{ plan.installments|length }})</h3>
+                {% if plan.status == 'active' %}
+                <a href="{{ url_for('installment_pay', plan_id=plan.id) }}" class="btn btn-gold btn-sm"><i class="fas fa-plus"></i> دفع قسط</a>
+                {% endif %}
+            </div>
+            <div class="data-card-body" style="padding:0;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>قسط #</th>
+                            <th>المبلغ</th>
+                            <th>تاريخ الاستحقاق</th>
+                            <th>الحالة</th>
+                            <th>تاريخ الدفع</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for inst in plan.installments|sort(attribute='number') %}
+                        <tr>
+                            <td style="font-weight:700;">{{ inst.number }}</td>
+                            <td style="font-weight:700;">{{ "{:,.0f}".format(inst.amount or 0) }} ج.م</td>
+                            <td>{{ inst.due_date.strftime('%Y-%m-%d') }}</td>
+                            <td>
+                                {% if inst.status == 'paid' %}
+                                <span class="badge badge-success"><i class="fas fa-check" style="margin-left:2px;"></i> مدفوع</span>
+                                {% else %}
+                                <span class="badge badge-danger"><i class="fas fa-clock" style="margin-left:2px;"></i> لم يُدفع</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ inst.paid_date.strftime('%Y-%m-%d') if inst.paid_date else '—' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div>
+        <div class="data-card">
+            <div class="data-card-header">
+                <h3><i class="fas fa-money-check-alt" style="margin-left:6px;color:var(--gold);"></i> سجل الدفعات</h3>
+            </div>
+            <div class="data-card-body" style="padding:0;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>التاريخ</th>
+                            <th>المبلغ</th>
+                            <th>طريقة الدفع</th>
+                            <th>الايصال</th>
+                            <th>ملاحظات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in plan.payments|sort(attribute='date', reverse=true) %}
+                        <tr>
+                            <td style="font-size:0.8rem;">{{ p.date.strftime('%Y-%m-%d') }}</td>
+                            <td class="text-success" style="font-weight:700;">{{ "{:,.0f}".format(p.amount or 0) }} ج.م</td>
+                            <td><span class="badge badge-gold">{{ PAYMENT_METHODS.get(p.payment_method, 'كاش') }}</span></td>
+                            <td>
+                                {% if p.receipt_image %}
+                                <a href="{{ url_for('static', filename='uploads/receipts/' + p.receipt_image) }}" target="_blank" title="عرض الايصال"><i class="fas fa-image" style="color:var(--gold);font-size:1rem;"></i></a>
+                                {% else %}—{% endif %}
+                            </td>
+                            <td style="font-size:0.82rem;">{{ p.notes or '—' }}</td>
+                        </tr>
+                        {% endfor %}
+                        {% if not plan.payments %}
+                        <tr><td colspan="5" class="empty-state" style="padding:30px;"><p>لا توجد دفعات بعد</p></td></tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if plan.status == 'active' %}
+        <div class="data-card" style="margin-top:16px;">
+            <div class="data-card-body">
+                <a href="{{ url_for('installment_pay', plan_id=plan.id) }}" class="btn btn-gold" style="width:100%;justify-content:center;"><i class="fas fa-money-bill-wave"></i> تسجيل دفعة قسط</a>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if plan.invoice_id %}
+        <div class="data-card" style="margin-top:16px;">
+            <div class="data-card-body">
+                <a href="{{ url_for('invoice_view', invoice_id=plan.invoice_id) }}" class="btn btn-navy" style="width:100%;justify-content:center;"><i class="fas fa-file-invoice"></i> عرض الفاتورة الام</a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

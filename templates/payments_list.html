@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+    <h1 style="font-size:1.3rem;font-weight:700;color:var(--text);margin-bottom:0;">
+        <i class="fas fa-money-bill-wave" style="margin-left:8px;"></i> المدفوعات
+    </h1>
+</div>
+
+<div class="data-card" style="margin-bottom:24px;">
+    <div class="data-card-body">
+        <form method="GET" action="{{ url_for('payments_list') }}" style="display:flex;gap:12px;flex-wrap:wrap;">
+            <input type="text" name="search" class="form-control" placeholder="بحث بالاسم..." value="{{ search }}" style="flex:1;min-width:200px;">
+            <button type="submit" class="btn btn-gold"><i class="fas fa-search"></i> بحث</button>
+            {% if search %}
+            <a href="{{ url_for('payments_list') }}" class="btn btn-outline"><i class="fas fa-times"></i> مسح</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<div class="data-card">
+    <div class="data-card-header">
+        <h3>قائمة المدفوعات ({{ payments|length }})</h3>
+    </div>
+    <div class="data-card-body" style="padding:0;">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>العميل</th>
+                    <th>المبلغ</th>
+                    <th>طريقة الدفع</th>
+                    <th>الايصال</th>
+                    <th>رقم الفاتورة</th>
+                    <th>التاريخ</th>
+                    <th>ملاحظات</th>
+                    <th>الدفعة القادمة</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in payments %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td><a href="{{ url_for('customer_profile', customer_id=p.customer.id) }}" style="color:var(--navy);text-decoration:none;font-weight:700;">{{ p.customer.name }}</a></td>
+                    <td class="text-success" style="font-weight:700;">{{ "{:,.0f}".format(p.amount or 0) }} ج.م</td>
+                    <td>
+                        {% if PAYMENT_METHODS.get(p.payment_method) %}
+                        <span class="badge badge-gold">{{ PAYMENT_METHODS.get(p.payment_method) }}</span>
+                        {% else %}
+                        <span class="badge badge-gold">{{ PAYMENT_METHODS.get('cash') }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if p.receipt_image %}
+                        <a href="{{ url_for('static', filename='uploads/receipts/' + p.receipt_image) }}" target="_blank" title="عرض الايصال"><i class="fas fa-image" style="color:var(--gold);font-size:1rem;"></i></a>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td>
+                        {% if p.invoice %}
+                        <a href="{{ url_for('invoice_view', invoice_id=p.invoice.id) }}" style="color:var(--navy);text-decoration:none;">{{ p.invoice.invoice_number }}</a>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td>{{ p.date.strftime('%Y-%m-%d') }}</td>
+                    <td>{{ p.notes or '—' }}</td>
+                    <td>
+                        {% if p.next_payment_date %}
+                        <span class="badge badge-navy">{{ p.next_payment_date.strftime('%Y-%m-%d') }} - {{ "{:,.0f}".format(p.next_payment_amount or 0) }} ج.م</span>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('payment_edit', payment_id=p.id) }}" class="btn btn-sm btn-outline"><i class="fas fa-edit"></i> تعديل</a>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not payments %}
+                <tr>
+                    <td colspan="10" class="empty-state" style="padding:40px;">
+                        <div class="empty-icon"><i class="fas fa-money-bill-wave"></i></div>
+                        <p>لا توجد مدفوعات</p>
+                    </td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+    <h1><i class="fa-solid fa-user-tie"></i> ادارة الموظفين</h1>
+    <a href="{{ url_for('employee_add') }}" class="btn btn-gold"><i class="fa-solid fa-user-plus"></i> اضافة موظف</a>
+</div>
+
+<div class="table-responsive">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>اسم المستخدم</th>
+                <th>الاسم الكامل</th>
+                <th>الصلاحية</th>
+                <th>الحالة</th>
+                <th>آخر دخول</th>
+                <th>اجراءات</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td>{{ u.id }}</td>
+                <td><strong>{{ u.username }}</strong></td>
+                <td>{{ u.full_name or '-' }}</td>
+                <td>
+                    {% if u.is_admin %}
+                        <span class="badge badge-gold"><i class="fa-solid fa-crown"></i> مدير</span>
+                    {% else %}
+                        <span class="badge badge-navy">{{ u.permissions | length }} صلاحية</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if u.is_active %}
+                        <span class="badge badge-success"><i class="fa-solid fa-check-circle"></i> نشط</span>
+                    {% else %}
+                        <span class="badge badge-danger"><i class="fa-solid fa-ban"></i> معطل</span>
+                    {% endif %}
+                </td>
+                <td>{{ u.last_login.strftime('%Y-%m-%d %H:%M') if u.last_login else 'لم يسجل دخول' }}</td>
+                <td>
+                    <div class="action-buttons">
+                        <a href="{{ url_for('employee_edit', user_id=u.id) }}" class="btn btn-sm btn-outline" title="تعديل">
+                            <i class="fa-solid fa-pen"></i>
+                        </a>
+                        <a href="{{ url_for('employee_permissions', user_id=u.id) }}" class="btn btn-sm btn-outline" title="الصلاحيات">
+                            <i class="fa-solid fa-key"></i>
+                        </a>
+                        {% if u.username != 'admin' %}
+                        <form method="POST" action="{{ url_for('employee_delete', user_id=u.id) }}" style="display:inline;" onsubmit="return confirm('هل انت متاكد من حذف هذا الموظف؟')">
+                            <button type="submit" class="btn btn-sm btn-danger" title="حذف"><i class="fa-solid fa-trash"></i></button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+            {% if not users %}
+            <tr><td colspan="7" style="text-align:center;padding:40px;color:#999;">لا يوجد موظفين</td></tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
