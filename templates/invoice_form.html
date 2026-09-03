@@ -7,6 +7,21 @@
 
 <div id="lockBanner" style="display:none;padding:14px 18px;border-radius:var(--radius-sm);margin-bottom:16px;font-weight:600;font-size:0.88rem;"></div>
 
+{% if no_price %}
+<div class="alert alert-danger" style="display:flex;align-items:center;gap:10px;margin-bottom:16px;border:1px solid #fca5a5;">
+    <i class="fas fa-exclamation-triangle" style="color:#dc2626;"></i>
+    <div>
+        <strong>لا يمكن حفظ الفاتورة:</strong> يوجد منتج بدون سعر — اكتب سعر البيع لكل صنف.
+        <div style="font-size:0.82rem;margin-top:4px;">
+            الاصناف الناقص سعرها:
+            {% for n in no_price %}
+            <span class="badge badge-danger" style="margin-left:4px;">{{ n }}</span>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <form method="POST" id="invoiceForm" enctype="multipart/form-data" {% if invoice %}action="{{ url_for('invoice_edit', invoice_id=invoice.id) }}"{% endif %}>
     <div class="two-col">
         <div>
@@ -402,7 +417,7 @@ function bindTabNavigation(row) {
 
 function bindUnitToggle(input) {
     if (!input) return;
-    var units = ['ق', 'ك', 'ع'];
+    var units = ['ق', 'ك', 'د'];
     input.addEventListener('click', function() {
         var idx = units.indexOf(this.value);
         this.value = units[(idx + 1) % units.length];

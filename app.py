@@ -1,5 +1,6 @@
 import os
 import uuid
+import json
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, g
 from werkzeug.utils import secure_filename
@@ -97,8 +98,7 @@ ACCOUNT_TYPES = {
     'sales': 'حسابات البيع',
     'shipping': 'حسابات الشحن',
     'travel': 'حسابات السفر',
-    'bab_al_sharriah': 'حسابات باب الشعريه',
-    'supplier': 'حسابات موردين'
+    'bab_al_sharriah': 'حسابات باب الشعريه'
 }
 
 PAYMENT_TYPES = {
@@ -210,6 +210,12 @@ with app.app_context():
             db.session.execute(db.text("ALTER TABLE invoices ADD COLUMN receipt_image VARCHAR(200)"))
         if 'created_by' not in invoice_cols:
             db.session.execute(db.text("ALTER TABLE invoices ADD COLUMN created_by INTEGER"))
+        if 'modified_by' not in invoice_cols:
+            db.session.execute(db.text("ALTER TABLE invoices ADD COLUMN modified_by INTEGER"))
+        if 'previous_due' not in invoice_cols:
+            db.session.execute(db.text("ALTER TABLE invoices ADD COLUMN previous_due FLOAT DEFAULT 0"))
+        if 'balance_after' not in invoice_cols:
+            db.session.execute(db.text("ALTER TABLE invoices ADD COLUMN balance_after FLOAT DEFAULT 0"))
 
         invoice_item_cols = {c['name'] for c in inspector.get_columns('invoice_items')}
         if 'unit_type' not in invoice_item_cols:
@@ -342,6 +348,32 @@ def delete_receipt_image(fname):
             os.remove(path)
         except OSError:
             pass
+
+
+def parse_images(value):
+    """تفسير قيمة صور الايصال: JSON array (جديدة) او اسم ملف واحد (قديمة)."""
+    if not value:
+        return []
+    s = str(value).strip()
+    if s.startswith('['):
+        try:
+            parsed = json.loads(s)
+            return [x for x in parsed if x] if isinstance(parsed, list) else []
+        except Exception:
+            return []
+    return [s]
+
+
+def save_receipt_images(files_list):
+    """حفظ عدة صور وارجاع JSON array من اسماء الملفات المحفوظة."""
+    names = []
+    if files_list:
+        for f in files_list:
+            if f and f.filename:
+                n = save_receipt_image(f)
+                if n:
+                    names.append(n)
+    return json.dumps(names)
 
 
 def generate_purchase_number():
@@ -607,6 +639,9 @@ def customers_list():
     query = Customer.query
     if account_type:
         query = query.filter_by(account_type=account_type)
+    else:
+        # استبعاد حسابات الموردين من قائمة العملاء (التوريد له صفحات منفصلة)
+        query = query.filter(Customer.account_type != 'supplier')
     if search:
         query = query.filter(Customer.name.contains(search) | Customer.phone.contains(search))
     customers = query.order_by(Customer.name).all()
@@ -655,9 +690,7 @@ def _customer_statement_rows(c):
         net = max(0, (inv.total or 0) - (inv.discount or 0))
         entries.append({'date': inv.date, 'label': f'فاتورة بيع رقم {inv.invoice_number}',
                         'debit': net, 'credit': 0})
-        linked = db.session.query(db.func.coalesce(db.func.sum(Payment.amount), 0)).filter(
-            Payment.invoice_id == inv.id).scalar()
-        upfront = max(0, (inv.paid_amount or 0) - linked)
+        upfront = max(0, (inv.paid_amount or 0))
         if upfront > 0:
             if inv.payment_type == 'cash':
                 lbl = 'مدفوع نقدي مع الفاتورة'
@@ -792,6 +825,24 @@ def invoice_add():
     customers = Customer.query.order_by(Customer.name).all()
     if request.method == 'POST':
         payment_type = request.form.get('payment_type', 'cash')
+
+        # التحقق: لا يُسمح بصنف له كمية بدون سعر
+        no_price_items = []
+        indices_ = sorted({int(k.rsplit('_', 1)[1]) for k in request.form if k.startswith('item_name_')})
+        for i in indices_:
+            iname = request.form.get(f'item_name_{i}', '').strip()
+            if not iname:
+                continue
+            qty = float(request.form.get(f'item_qty_{i}', 0) or 0)
+            price = float(request.form.get(f'item_price_{i}', 0) or 0)
+            if qty > 0 and price <= 0:
+                no_price_items.append(iname)
+        if no_price_items:
+            flash('لا يمكن حفظ الفاتورة: يوجد منتج بدون سعر (' + '، '.join(no_price_items) + ')', 'danger')
+            return render_template('invoice_form.html',
+                customers=customers, invoice=None, no_price=no_price_items,
+                PAYMENT_TYPES=PAYMENT_TYPES)
+
         inv = Invoice(
             invoice_number=generate_invoice_number(),
             customer_id=int(request.form['customer_id']),
@@ -799,7 +850,7 @@ def invoice_add():
             payment_type=payment_type,
             show_balance=bool(request.form.get('show_balance')),
             payment_method=request.form.get('payment_method', 'cash') if payment_type in ('cash', 'installment') else 'cash',
-            receipt_image=save_receipt_image(request.files.get('receipt_image')),
+            receipt_image=save_receipt_images(request.files.getlist('receipt_images')),
             created_by=session.get('user_id'),
             notes=request.form.get('notes', '')
         )
@@ -830,16 +881,31 @@ def invoice_add():
         inv.discount = discount
         net = max(0, total - discount)
 
+        # حساب اللقطة التراكمية الثابتة:
+        # previous_due = مستحق (balance_after) اخر فاتورة سابقة للعميل
+        # balance_after = previous_due + قيمة الفاتورة - دفعات فورية (كاش/مقدم)
+        prev_inv = Invoice.query.filter(
+            Invoice.customer_id == inv.customer_id,
+            Invoice.id != inv.id
+        ).order_by(Invoice.id.desc()).first()
+        prev_due = (prev_inv.balance_after if prev_inv and prev_inv.balance_after is not None else 0) or 0
+        if prev_due < 0:
+            prev_due = 0
+        inv.previous_due = prev_due
+
         if payment_type == 'cash':
             inv.paid_amount = net
             inv.remaining = 0
+            inv.balance_after = max(0, prev_due + net - net)
         elif payment_type == 'credit':
             inv.paid_amount = 0
             inv.remaining = net
+            inv.balance_after = max(0, prev_due + net)
         elif payment_type == 'installment':
             down = float(request.form.get('down_payment', 0) or 0)
             inv.paid_amount = down
             inv.remaining = net - down
+            inv.balance_after = max(0, prev_due + net - down)
 
             count = int(request.form.get('installment_count', 1) or 1)
             start_str = request.form.get('installment_start_date', '')
@@ -899,6 +965,7 @@ def invoice_edit(invoice_id):
     customers = Customer.query.order_by(Customer.name).all()
 
     if request.method == 'POST':
+        inv.modified_by = session.get('user_id')
         inv.customer_id = int(request.form['customer_id'])
         inv.shipping_company = request.form.get('shipping_company', '')
         inv.show_balance = bool(request.form.get('show_balance'))
@@ -906,10 +973,10 @@ def invoice_edit(invoice_id):
             inv.payment_method = request.form.get('payment_method', 'cash')
         else:
             inv.payment_method = 'cash'
-        new_receipt = save_receipt_image(request.files.get('receipt_image'))
-        if new_receipt:
-            delete_receipt_image(inv.receipt_image)
-            inv.receipt_image = new_receipt
+        new_images = save_receipt_images(request.files.getlist('receipt_images'))
+        if new_images != '[]':
+            existing = parse_images(inv.receipt_image)
+            inv.receipt_image = json.dumps(existing + parse_images(new_images))
         inv.notes = request.form.get('notes', '')
 
         InvoiceItem.query.filter_by(invoice_id=inv.id).delete()
@@ -943,8 +1010,20 @@ def invoice_edit(invoice_id):
             db.func.coalesce(db.func.sum(Payment.amount), 0)
         ).filter(Payment.invoice_id == inv.id).scalar()
 
-        inv.paid_amount = payments_total
-        inv.remaining = max(0, net - payments_total)
+        # paid_amount يظل الدفعة الفورية عند الإنشاء؛ المدفوع الباقي محسوب من سجلات الدفعات
+        inv.remaining = max(0, net - (inv.paid_amount or 0) - payments_total)
+
+        # اعادة حساب اللقطة التراكمية الثابتة عند التعديل
+        # حفظ previous_due الحالي (الثابت) وبناء balance_after عليه
+        cur_prev = inv.previous_due if inv.previous_due is not None else 0
+        if cur_prev == 0:
+            prev_inv_edit = Invoice.query.filter(
+                Invoice.customer_id == inv.customer_id,
+                Invoice.id != inv.id
+            ).order_by(Invoice.id.desc()).first()
+            cur_prev = (prev_inv_edit.balance_after if prev_inv_edit and prev_inv_edit.balance_after else 0) or 0
+        inv.previous_due = max(0, cur_prev)
+        inv.balance_after = max(0, round((inv.previous_due or 0) + net - payments_total, 2))
 
         if inv.payment_type == 'installment':
             plan = InstallmentPlan.query.filter_by(invoice_id=inv.id).first()
@@ -1020,14 +1099,20 @@ def invoice_view(invoice_id):
                 'number': bi.invoice_number, 'total': net,
                 'paid': paid_for_inv, 'remaining': rem
             })
-    # اخر مستحقات على العميل قبل هذه الفاتورة
-    previous_dues = max(0, round(cust_balance_total - this_inv_rem, 2))
+    # للمستحقات المعروضة في الفاتورة نستخدم اللقطة الثابتة المحفوظة وقت الانشاء
+    # وليس الحساب العام الحالي — حتى لا تتغير الفواتير القديمة
+    prev_saved = inv.previous_due if inv.previous_due is not None else 0
+    after_saved = inv.balance_after if inv.balance_after is not None else 0
+    # fallback للفواتير القديمة التي انشئت قبل هذه الميزة
+    if prev_saved == 0 and after_saved == 0 and cust_balance_total > 0:
+        prev_saved = max(0, round(cust_balance_total - this_inv_rem, 2))
+        after_saved = max(0, round(cust_balance_total, 2))
     return render_template('invoice_view.html', invoice=inv,
         return_items=return_items, return_amount=return_amount,
         installment_plan=installment_plan, installments=installments,
         installment_payments=installment_payments, PAYMENT_TYPES=PAYMENT_TYPES,
         cust_balance_total=cust_balance_total, cust_balance_list=cust_balance_list,
-        previous_dues=previous_dues)
+        previous_dues=max(0, prev_saved), balance_after=max(0, after_saved))
 
 
 @app.route('/invoices/<int:invoice_id>/delete', methods=['POST'])
@@ -1075,18 +1160,36 @@ def payment_add(customer_id):
             invoice_id=invoice_id,
             notes=request.form.get('notes', ''),
             payment_method=request.form.get('payment_method', 'cash'),
-            receipt_image=save_receipt_image(request.files.get('receipt_image')),
+            receipt_image=save_receipt_images(request.files.getlist('receipt_images')),
             created_by=session.get('user_id'),
             next_payment_date=datetime.strptime(request.form['next_payment_date'], '%Y-%m-%d').date() if request.form.get('next_payment_date') else None,
             next_payment_amount=float(request.form['next_payment_amount']) if request.form.get('next_payment_amount') else None
         )
         db.session.add(p)
 
+        # اذا لم يحدد المستخدم فاتورة، تُسجل الدفعة تلقائياً على احدث فاتورة للعميل
+        if not invoice_id:
+            latest_inv = Invoice.query.filter(
+                Invoice.customer_id == c.id,
+                Invoice.is_returned == False,
+                Invoice.remaining > 0
+            ).order_by(Invoice.id.desc()).first()
+            if latest_inv:
+                invoice_id = latest_inv.id
+                p.invoice_id = latest_inv.id
+
         if invoice_id:
             inv = Invoice.query.get(invoice_id)
             if inv:
-                inv.paid_amount = (inv.paid_amount or 0) + amount
-                inv.remaining = max(0, inv.total - inv.paid_amount)
+                # الدفعات اللاحقة تُسجل في سجلات Payment فقط (لا تُضاف لـ paid_amount
+                # الذي يمثل الدفعة الفورية عند الإنشاء) —— لتجنب الازدواج في حساب الرصيد
+                total_paid_inv = (inv.paid_amount or 0) + db.session.query(
+                    db.func.coalesce(db.func.sum(Payment.amount), 0)
+                ).filter(Payment.invoice_id == inv.id).scalar()
+                inv.remaining = max(0, (inv.total or 0) - total_paid_inv)
+                # تحديث المستحق التراكمي الثابت لهذه الفاتورة
+                if inv.balance_after is not None:
+                    inv.balance_after = max(0, round((inv.balance_after or 0) - amount, 2))
 
         db.session.commit()
         flash('تم تسجيل الدفعة بنجاح', 'success')
@@ -1131,8 +1234,8 @@ def payment_edit(payment_id):
                 payments_total = db.session.query(
                     db.func.coalesce(db.func.sum(Payment.amount), 0)
                 ).filter(Payment.invoice_id == old_inv.id, Payment.id != p.id).scalar()
-                old_inv.paid_amount = payments_total
-                old_inv.remaining = max(0, (old_inv.total or 0) - (old_inv.discount or 0) - payments_total)
+                # paid_amount يظل الدفعة الفورية عند الإنشاء ولا يُعاد من سجلات الدفعات
+                old_inv.remaining = max(0, (old_inv.total or 0) - (old_inv.discount or 0) - (old_inv.paid_amount or 0) - payments_total)
 
         p.amount = new_amount
         p.invoice_id = new_invoice_id
@@ -1151,14 +1254,40 @@ def payment_edit(payment_id):
                 payments_total = db.session.query(
                     db.func.coalesce(db.func.sum(Payment.amount), 0)
                 ).filter(Payment.invoice_id == new_inv.id, Payment.id != p.id).scalar()
-                new_inv.paid_amount = payments_total + new_amount
-                new_inv.remaining = max(0, (new_inv.total or 0) - (new_inv.discount or 0) - new_inv.paid_amount)
+                new_inv.remaining = max(0, (new_inv.total or 0) - (new_inv.discount or 0) - (new_inv.paid_amount or 0) - (payments_total + new_amount))
 
         db.session.commit()
         flash('تم تعديل الدفعة بنجاح', 'success')
         return redirect(url_for('customer_profile', customer_id=c.id))
 
     return render_template('payment_form.html', customer=c, unpaid_invoices=unpaid_invoices, payment=p)
+
+
+@app.route('/payments/<int:payment_id>/delete', methods=['POST'])
+@login_required
+def payment_delete(payment_id):
+    p = Payment.query.get_or_404(payment_id)
+    cid = p.customer_id
+
+    # تراجع كامل: إرجاع الفاتورة والمستحق التراكمي لحالتهما قبل هذه الدفعة
+    if p.invoice_id:
+        inv = Invoice.query.get(p.invoice_id)
+        if inv:
+            total_paid_inv = (inv.paid_amount or 0) + db.session.query(
+                db.func.coalesce(db.func.sum(Payment.amount), 0)
+            ).filter(Payment.invoice_id == inv.id, Payment.id != p.id).scalar()
+            inv.remaining = max(0, (inv.total or 0) - (inv.discount or 0) - total_paid_inv)
+            if inv.balance_after is not None:
+                inv.balance_after = max(0, round((inv.balance_after or 0) + (p.amount or 0), 2))
+
+    # حذف صور الإيصالات المرتبطة بالدفعة
+    for fname in parse_images(p.receipt_image):
+        delete_receipt_image(fname)
+
+    db.session.delete(p)
+    db.session.commit()
+    flash('تم حذف الدفعة بنجاح', 'success')
+    return redirect(url_for('customer_profile', customer_id=cid))
 
 
 @app.route('/customers/<int:customer_id>/return', methods=['GET', 'POST'])
@@ -1319,8 +1448,12 @@ def installment_pay(plan_id):
         if plan.invoice_id:
             inv = Invoice.query.get(plan.invoice_id)
             if inv:
-                inv.paid_amount = (inv.paid_amount or 0) + amount
-                inv.remaining = max(0, inv.total - inv.paid_amount)
+                # لا نضيف لـ paid_amount (يمثل الدفعة الفورية عند الإنشاء)؛
+                # دفعات الأقساط مسجلة في InstallmentPayment——لتجنب الازدواج في الرصيد
+                total_paid_inv = (inv.paid_amount or 0) + db.session.query(
+                    db.func.coalesce(db.func.sum(InstallmentPayment.amount), 0)
+                ).filter(InstallmentPayment.plan_id == plan.id).scalar()
+                inv.remaining = max(0, (inv.total or 0) - total_paid_inv)
 
         db.session.commit()
         flash('تم تسجيل الدفعة بنجاح', 'success')
@@ -1398,8 +1531,11 @@ def supplier_installment_pay(plan_id):
         if plan.purchase_id:
             pur = Purchase.query.get(plan.purchase_id)
             if pur:
-                pur.paid_amount = (pur.paid_amount or 0) + amount
-                pur.remaining = max(0, pur.total - pur.paid_amount)
+                # لا نضيف لـ paid_amount (الدفعة الفورية)؛ أقساط المورد مسجلة في SupplierInstallmentPayment
+                total_paid_pur = (pur.paid_amount or 0) + db.session.query(
+                    db.func.coalesce(db.func.sum(SupplierInstallmentPayment.amount), 0)
+                ).filter(SupplierInstallmentPayment.plan_id == plan.id).scalar()
+                pur.remaining = max(0, (pur.total or 0) - total_paid_pur)
 
         db.session.commit()
         flash('تم تسجيل الدفعة بنجاح', 'success')
@@ -1454,9 +1590,7 @@ def _supplier_statement_rows(s):
     for pur in s.purchases:
         entries.append({'date': pur.date, 'label': f'فاتورة مشتريات رقم {pur.purchase_number}',
                         'debit': pur.total or 0, 'credit': 0})
-        linked = db.session.query(db.func.coalesce(db.func.sum(SupplierPayment.amount), 0)).filter(
-            SupplierPayment.purchase_id == pur.id).scalar()
-        upfront = max(0, (pur.paid_amount or 0) - linked)
+        upfront = max(0, (pur.paid_amount or 0))
         if upfront > 0:
             if pur.payment_type == 'cash':
                 lbl = 'مدفوع نقدي مع امر الشراء'
@@ -1585,8 +1719,11 @@ def supplier_payment_add(supplier_id):
         if purchase_id:
             pur = Purchase.query.get(purchase_id)
             if pur:
-                pur.paid_amount = (pur.paid_amount or 0) + amount
-                pur.remaining = max(0, pur.total - pur.paid_amount)
+                # الدفعات اللاحقة تُسجل في سجلات SupplierPayment فقط؛ paid_amount يظل الدفعة الفورية
+                total_paid_pur = (pur.paid_amount or 0) + db.session.query(
+                    db.func.coalesce(db.func.sum(SupplierPayment.amount), 0)
+                ).filter(SupplierPayment.purchase_id == pur.id).scalar()
+                pur.remaining = max(0, (pur.total or 0) - total_paid_pur)
 
         db.session.commit()
         flash('تم تسجيل الدفعة بنجاح', 'success')
@@ -1786,11 +1923,11 @@ def purchase_edit(purchase_id):
             p.paid_amount = total
             p.remaining = 0
         elif payment_type == 'credit':
-            p.paid_amount = payments_total
+            p.paid_amount = 0
             p.remaining = max(0, total - payments_total)
         elif payment_type == 'installment':
             down = float(request.form.get('down_payment', 0) or 0)
-            p.paid_amount = payments_total
+            p.paid_amount = down
             p.remaining = max(0, total - payments_total)
 
             count = int(request.form.get('installment_count', 1) or 1)

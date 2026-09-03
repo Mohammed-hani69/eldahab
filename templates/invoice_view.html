@@ -26,47 +26,57 @@
         <div><strong>الشحن:</strong> {{ invoice.shipping_company or '—' }}</div>
         <div><strong>التاريخ:</strong> {{ invoice.date.strftime('%Y-%m-%d') }}</div>
     </div>
-    <div class="compact-payment-bar">
-        <span style="font-size:0.78rem;color:var(--text-secondary);">نوع الدفع:</span>
-        {% if invoice.payment_type == 'cash' %}
-        <span class="badge badge-success"><i class="fas fa-money-bill" style="margin-left:2px;"></i> نقداً</span>
-        {% elif invoice.payment_type == 'credit' %}
-        <span class="badge badge-warning" style="background:rgba(245,158,11,0.12);color:#b45309;"><i class="fas fa-clock" style="margin-left:2px;"></i> بالاجل</span>
-        <span style="font-size:0.78rem;font-weight:700;">المتبقي: {{ "{:,.0f}".format(invoice.remaining or 0) }} ج.م</span>
-        {% elif invoice.payment_type == 'installment' %}
-        <span class="badge badge-info"><i class="fas fa-calendar-check" style="margin-left:2px;"></i> تقسيط</span>
-        <span style="font-size:0.78rem;">المقدم: {{ "{:,.0f}".format(invoice.paid_amount or 0) }} ج.م | المتبقي: {{ "{:,.0f}".format(invoice.remaining or 0) }} ج.م</span>
-        {% endif %}
-        {% if invoice.payment_type in ('cash', 'installment') and PAYMENT_METHODS.get(invoice.payment_method) %}
-        <span style="font-size:0.78rem;color:var(--text-secondary);">| طريقة الدفع:</span>
-        <span class="badge badge-gold">{{ PAYMENT_METHODS.get(invoice.payment_method) }}</span>
-        {% endif %}
-        {% if invoice.receipt_image %}
-        <a href="{{ url_for('static', filename='uploads/receipts/' + invoice.receipt_image) }}" target="_blank" class="badge badge-navy" style="text-decoration:none;"><i class="fas fa-image" style="margin-left:2px;"></i> صورة الايصال</a>
-        {% endif %}
+    <div class="invoice-meta-row">
+        <div class="compact-payment-bar" style="border-bottom:none;flex:1;">
+            <span style="font-size:0.78rem;color:var(--text-secondary);">نوع الدفع:</span>
+            {% if invoice.payment_type == 'cash' %}
+            <span class="badge badge-success"><i class="fas fa-money-bill" style="margin-left:2px;"></i> نقداً</span>
+            {% elif invoice.payment_type == 'credit' %}
+            <span class="badge badge-warning" style="background:rgba(245,158,11,0.12);color:#b45309;"><i class="fas fa-clock" style="margin-left:2px;"></i> بالاجل</span>
+            <span style="font-size:0.78rem;font-weight:700;">المتبقي: {{ "{:,.0f}".format(invoice.remaining or 0) }} ج.م</span>
+            {% elif invoice.payment_type == 'installment' %}
+            <span class="badge badge-info"><i class="fas fa-calendar-check" style="margin-left:2px;"></i> تقسيط</span>
+            <span style="font-size:0.78rem;">المقدم: {{ "{:,.0f}".format(invoice.paid_amount or 0) }} ج.م | المتبقي: {{ "{:,.0f}".format(invoice.remaining or 0) }} ج.م</span>
+            {% endif %}
+            {% if invoice.payment_type in ('cash', 'installment') and PAYMENT_METHODS.get(invoice.payment_method) %}
+            <span style="font-size:0.78rem;color:var(--text-secondary);">| طريقة الدفع:</span>
+            <span class="badge badge-gold">{{ PAYMENT_METHODS.get(invoice.payment_method) }}</span>
+            {% endif %}
+            {% if invoice.receipt_image %}
+            <a href="{{ url_for('static', filename='uploads/receipts/' + invoice.receipt_image) }}" target="_blank" class="badge badge-navy" style="text-decoration:none;"><i class="fas fa-image" style="margin-left:2px;"></i> صورة الايصال</a>
+            {% endif %}
+        </div>
+        <div class="accountant-box">
+            {% set shown_name = (invoice.modifier.full_name or invoice.modifier.username) if invoice.modifier else ((invoice.creator.full_name or invoice.creator.username) if invoice.creator else '—') %}
+            <span class="accountant-label">المحاسب</span>
+            <span class="accountant-name">{{ shown_name }}</span>
+            {% if invoice.modifier and invoice.creator and invoice.modifier.id != invoice.creator.id %}
+            <span class="accountant-moditag">(عدّل)</span>
+            {% endif %}
+        </div>
     </div>
 
     <div class="invoice-items-area">
-        <table class="compact-table">
+        <table class="compact-table invoice-items-table">
             <thead>
                 <tr>
-                    <th style="width:40px;">#</th>
+                    <th style="width:50px;">#</th>
                     <th>اسم الصنف</th>
-                    <th style="width:70px;">الكمية</th>
-                    <th style="width:50px;">الفئة</th>
-                    <th style="width:100px;">سعر الوحدة</th>
-                    <th style="width:110px;">الاجمالي</th>
+                    <th style="width:90px;">الكمية</th>
+                    <th style="width:60px;">الفئة</th>
+                    <th style="width:130px;">سعر الوحدة</th>
+                    <th style="width:140px;">الاجمالي</th>
                 </tr>
             </thead>
             <tbody>
                 {% for item in invoice.items %}
                 <tr class="{% if loop.index % 20 == 0 and not loop.last %}page-break-row{% endif %}">
-                    <td>{{ loop.index }}</td>
-                    <td style="font-weight:600;">{{ item.item_name }}</td>
-                    <td>{{ item.quantity }}</td>
-                    <td style="text-align:center;">{{ item.unit_type or 'ق' }}</td>
-                    <td>{{ "{:,.0f}".format(item.unit_price or 0) }} ج.م</td>
-                    <td style="font-weight:700;">{{ "{:,.0f}".format(item.total or 0) }} ج.م</td>
+                    <td class="item-cell">{{ loop.index }}</td>
+                    <td class="item-cell" style="font-weight:700;">{{ item.item_name }}</td>
+                    <td class="item-cell" style="text-align:center;">{{ item.quantity }}</td>
+                    <td class="item-cell" style="text-align:center;">{{ item.unit_type or 'ق' }}</td>
+                    <td class="item-cell">{{ "{:,.0f}".format(item.unit_price or 0) }} ج.م</td>
+                    <td class="item-cell" style="font-weight:800;">{{ "{:,.0f}".format(item.total or 0) }} ج.م</td>
                 </tr>
                 {% endfor %}
                 {% if not invoice.items %}
@@ -120,64 +130,50 @@
     {% endif %}
 
     <div style="padding:0 16px 14px;">
-        {% set show_bal = invoice.show_balance and cust_balance_total > 0 %}
         {% set inv_net = (invoice.total or 0) - (invoice.discount or 0) %}
-        {% if show_bal %}
-            {% if invoice.discount and invoice.discount > 0 %}
-            <div style="display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,var(--navy),#253d5c);border-radius:8px;padding:10px 16px;color:#fff;font-size:0.82rem;width:100%;margin-bottom:6px;">
-                <div style="display:flex;align-items:center;gap:6px;">
-                    <span style="opacity:0.7;">الاجمالي</span>
-                    <span style="font-weight:700;text-decoration:line-through;opacity:0.7;">{{ "{:,.0f}".format(invoice.total or 0) }} ج.م</span>
-                </div>
-                <div style="display:flex;align-items:center;gap:6px;color:#fbb;">
-                    <i class="fas fa-percentage" style="font-size:0.7rem;"></i>
-                    <span style="font-weight:700;">{{ "{:,.0f}".format(invoice.discount) }} ج.م</span>
-                </div>
-                <div style="display:flex;align-items:center;gap:6px;">
-                    <span style="opacity:0.7;">الصافي</span>
-                    <span style="font-size:1rem;font-weight:900;color:var(--gold);">{{ "{:,.0f}".format(inv_net) }} ج.م</span>
-                </div>
-            </div>
-            {% endif %}
-            <div class="grand-total compact-total" style="margin-top:0;">
-                <span class="total-label"><i class="fas fa-clock-rotate-left" style="margin-left:4px;"></i> آخر المستحقات (قبل هذه الفاتورة)</span>
-                <span class="total-value">{{ "{:,.0f}".format(previous_dues) }} ج.م</span>
-            </div>
-            <div class="grand-total compact-total" style="background:linear-gradient(135deg,var(--navy),#253d5c);margin-top:6px;">
-                <span class="total-label">اجمالي الفاتورة</span>
-                <span class="total-value">{{ "{:,.0f}".format(inv_net) }} ج.م</span>
-            </div>
-            <div class="grand-total compact-total" style="background:linear-gradient(135deg,#dc3545,#c82333);margin-top:6px;">
-                <span class="total-label"><i class="fas fa-exclamation-triangle" style="margin-left:4px;"></i> الاجمالي الكلي المطلوب</span>
-                <span class="total-value">{{ "{:,.0f}".format(previous_dues + inv_net) }} ج.م</span>
-            </div>
-        {% else %}
-        <div style="{% if show_bal %}display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;{% endif %}">
-            <div style="{% if show_bal %}flex:1;min-width:220px;display:flex;{% endif %}">
-                {% if invoice.discount and invoice.discount > 0 %}
-                <div style="display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,var(--navy),#253d5c);border-radius:8px;padding:10px 16px;color:#fff;font-size:0.82rem;width:100%;">
-                    <div style="display:flex;align-items:center;gap:6px;">
-                        <span style="opacity:0.7;">الاجمالي</span>
-                        <span style="font-weight:700;text-decoration:line-through;opacity:0.7;">{{ "{:,.0f}".format(invoice.total or 0) }} ج.م</span>
-                    </div>
-                    <div style="display:flex;align-items:center;gap:6px;color:#fbb;">
-                        <i class="fas fa-percentage" style="font-size:0.7rem;"></i>
-                        <span style="font-weight:700;">{{ "{:,.0f}".format(invoice.discount) }} ج.م</span>
-                    </div>
-                    <div style="display:flex;align-items:center;gap:6px;">
-                        <span style="opacity:0.7;">الصافي</span>
-                        <span style="font-size:1rem;font-weight:900;color:var(--gold);">{{ "{:,.0f}".format(inv_net) }} ج.م</span>
-                    </div>
-                </div>
-                {% else %}
-                <div class="grand-total compact-total" style="{% if show_bal %}margin-top:0;flex:1;{% endif %}">
-                    <span class="total-label">الاجمالي الكلي</span>
-                    <span class="total-value">{{ "{:,.0f}".format(invoice.total or 0) }} ج.م</span>
-                </div>
-                {% endif %}
-            </div>
+        {% set show_bal = invoice.show_balance and (previous_dues > 0 or balance_after > 0) %}
+        {% set shown_name = (invoice.modifier.full_name or invoice.modifier.username) if invoice.modifier else ((invoice.creator.full_name or invoice.creator.username) if invoice.creator else '—') %}
+
+        {% if invoice.notes %}
+        <div class="invoice-notes {{ 'with-bal' if show_bal }}">
+            <span class="notes-label"><i class="fas fa-sticky-note" style="margin-left:4px;"></i> الملاحظات:</span>
+            <span class="notes-text">{{ invoice.notes }}</span>
         </div>
         {% endif %}
+
+        {% if invoice.discount and invoice.discount > 0 %}
+        <div class="discount-bar">
+            <div><span class="d-label">الاجمالي</span><span class="d-cross">{{ "{:,.0f}".format(invoice.total or 0) }} ج.م</span></div>
+            <div style="color:#fbb;"><i class="fas fa-percentage" style="font-size:0.7rem;"></i><span style="font-weight:700;"> {{ "{:,.0f}".format(invoice.discount) }} ج.م</span></div>
+            <div><span class="d-label">الصافي</span><span class="d-net">{{ "{:,.0f}".format(inv_net) }} ج.م</span></div>
+        </div>
+        {% endif %}
+
+        <div class="totals-row">
+            {% if show_bal %}
+            <div class="grand-total compact-total total-box total-dues">
+                <span class="total-label"><i class="fas fa-clock-rotate-left" style="margin-left:4px;"></i> المستحق السابق</span>
+                <span class="total-value">{{ "{:,.0f}".format(previous_dues) }} ج.م</span>
+            </div>
+            <div class="grand-total compact-total total-box total-invoice">
+                <span class="total-label">قيمة الفاتورة</span>
+                <span class="total-value">{{ "{:,.0f}".format(inv_net) }} ج.م</span>
+            </div>
+            <div class="grand-total compact-total total-box total-invoice total-paid">
+                <span class="total-label">المدفوع (كاش/مقدم)</span>
+                <span class="total-value">{{ "{:,.0f}".format(invoice.paid_amount or 0) }} ج.م</span>
+            </div>
+            <div class="grand-total compact-total total-box total-grand">
+                <span class="total-label"><i class="fas fa-exclamation-triangle" style="margin-left:4px;"></i> المستحق بعد الفاتورة</span>
+                <span class="total-value">{{ "{:,.0f}".format(balance_after) }} ج.م</span>
+            </div>
+            {% else %}
+            <div class="grand-total compact-total total-box total-invoice">
+                <span class="total-label">الاجمالي الكلي</span>
+                <span class="total-value">{{ "{:,.0f}".format(inv_net) }} ج.م</span>
+            </div>
+            {% endif %}
+        </div>
         {% if return_amount > 0 %}
         <div class="grand-total compact-total" style="background:linear-gradient(135deg,#dc3545,#c82333);margin-top:6px;">
             <span class="total-label">اجمالي المرتجعات</span>
@@ -219,11 +215,6 @@
         </div>
     </div>
     {% endif %}
-    {% if invoice.creator %}
-    <div style="text-align:left;padding:0 16px 8px;font-size:0.62rem;color:var(--text-muted);direction:ltr;">
-        {{ invoice.creator.full_name or invoice.creator.username }}
-    </div>
-    {% endif %}
 </div>
 
 <div style="margin-top:20px;display:flex;gap:12px;" class="no-print">
@@ -261,21 +252,101 @@
 .compact-table thead th {
     background: var(--navy);
     color: #fff;
-    padding: 7px 10px;
-    font-size: 0.72rem;
-    font-weight: 600;
+    padding: 9px 12px;
+    font-size: 0.8rem;
+    font-weight: 700;
     text-align: right;
     white-space: nowrap;
+    border: 1px solid #0f2540;
 }
 .compact-table tbody td {
-    padding: 6px 10px;
-    border-bottom: 1px solid var(--border-light);
-    font-size: 0.78rem;
+    padding: 10px 12px;
+    border: 1px solid #c9d4e2;
+    font-size: 0.92rem;
+    line-height: 1.5;
 }
-.compact-table tbody tr:hover { background: rgba(207,163,64,0.03); }
-.compact-total { padding: 10px 16px; }
-.compact-total .total-label { font-size: 0.88rem; }
-.compact-total .total-value { font-size: 1.15rem; }
+.compact-table tbody tr { border-bottom: 1px solid #b6c2d2; }
+.compact-table tbody tr:nth-child(even) { background: #f7f9fc; }
+.compact-table tbody tr:hover { background: rgba(207,163,64,0.06); }
+
+.invoice-items-table .item-cell {
+    font-size: 0.95rem;
+    padding: 9px 12px;
+}
+
+.invoice-meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+    padding: 0 16px;
+}
+.accountant-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--gold-glow);
+    border: 1px solid rgba(207,163,64,0.4);
+    border-radius: 8px;
+    padding: 6px 12px;
+    white-space: nowrap;
+}
+.accountant-label { font-size: 0.75rem; color: var(--text-secondary); }
+.accountant-name { font-size: 0.95rem; font-weight: 800; color: var(--navy); }
+.accountant-moditag {
+    font-size: 0.68rem; font-weight: 700; color: #fff;
+    background: var(--danger); border-radius: 6px; padding: 2px 7px;
+}
+
+.invoice-notes {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-right: 4px solid var(--gold);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 10px;
+}
+.invoice-notes .notes-label {
+    font-size: 0.8rem; font-weight: 800; color: #7a5d1e; white-space: nowrap;
+}
+.invoice-notes .notes-text {
+    font-size: 0.92rem; color: #57451a; line-height: 1.7; flex: 1;
+}
+
+.totals-row {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+    flex-wrap: wrap;
+}
+.total-box { flex: 1; min-width: 180px; margin-top: 6px; }
+.total-dues { background: linear-gradient(135deg, #6b7280, #4b5563); }
+.total-invoice { background: linear-gradient(135deg, var(--navy), #253d5c); }
+.total-paid { background: linear-gradient(135deg, #059669, #047857); }
+.total-grand { background: linear-gradient(135deg, #dc3545, #c82333); }
+
+.discount-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(135deg, var(--navy), #253d5c);
+    border-radius: 8px;
+    padding: 10px 16px;
+    color: #fff;
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+}
+.discount-bar .d-label { opacity: 0.7; }
+.discount-bar .d-cross { font-weight: 700; text-decoration: line-through; opacity: 0.7; margin-right: 6px; }
+.discount-bar .d-net { font-size: 1rem; font-weight: 900; color: var(--gold); margin-right: 6px; }
+
+.compact-total { padding: 12px 16px; }
+.compact-total .total-label { font-size: 0.88rem; color: #fff; }
+.compact-total .total-value { font-size: 1.25rem; }
 
 .invoice-items-area { border-bottom: 1px solid var(--border); }
 
@@ -345,19 +416,42 @@
     .compact-payment-bar { padding: 4px 12px; font-size: 0.72rem; }
 
     .compact-table thead th {
-        padding: 5px 8px !important;
-        font-size: 0.68rem !important;
+        padding: 6px 8px !important;
+        font-size: 0.75rem !important;
+        border: 1px solid #0f2540 !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
     .compact-table tbody td {
-        padding: 4px 8px !important;
-        font-size: 0.72rem !important;
+        padding: 6px 8px !important;
+        font-size: 0.85rem !important;
+        border: 1px solid #aeb9c8 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
     }
+    .invoice-items-table .item-cell { font-size: 0.88rem !important; }
 
     .compact-total { padding: 8px 12px !important; }
-    .compact-total .total-label { font-size: 0.8rem !important; }
-    .compact-total .total-value { font-size: 0.95rem !important; }
+    .compact-total .total-label { font-size: 0.82rem !important; color: #fff !important; }
+    .compact-total .total-value { font-size: 1.1rem !important; }
+    .totals-row { gap: 6px !important; }
+    .total-box { min-width: 30% !important; margin-top: 4px !important; }
+    .compact-payment-bar { border-bottom: none !important; }
+
+    .invoice-meta-row { border-bottom: 1px solid #000 !important; padding: 0 12px !important; }
+    .accountant-box { background: none !important; border: 1px solid #000 !important; padding: 4px 8px !important; }
+    .accountant-label { font-size: 0.7rem !important; }
+    .accountant-name { font-size: 0.85rem !important; color: #000 !important; }
+    .accountant-moditag { background: #000 !important; }
+
+    .invoice-notes {
+        border: 1px solid #000 !important; background: none !important;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .invoice-notes .notes-label { color: #000 !important; }
+    .invoice-notes .notes-text { color: #000 !important; }
+    .discount-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .total-dues, .total-invoice, .total-grand { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
     .page-break-row td { border-bottom: 2px solid #000 !important; }
 

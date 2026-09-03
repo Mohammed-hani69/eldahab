@@ -62,10 +62,19 @@ class Customer(db.Model):
     installment_plans = db.relationship('InstallmentPlan', backref='customer', lazy=True)
 
     def total_invoiced(self):
-        return sum(inv.total for inv in self.invoices if not inv.is_returned)
+        # مجموع الفواتير غير المرتجعة (القيمة الصافية بعد الخصم)
+        return sum((inv.total or 0) - (inv.discount or 0) for inv in self.invoices if not inv.is_returned)
 
     def total_paid(self):
-        return sum(p.amount for p in self.payments)
+        # الدفعات المسجلة (سجلات) + مبالغ الأقساط المدفوعة + المبالغ المدفوعة فوراً
+        # عند إنشاء الفاتورة (كاش / مقدم تقسيط) —— بدون ازدواج
+        sum_payments = sum(p.amount for p in self.payments)
+        sum_inst = sum(ip.amount for ip in InstallmentPayment.query.filter(
+            InstallmentPayment.plan_id.in_([pl.id for pl in self.installment_plans])
+        ).all())
+        # paid_amount على الفاتورة يمثل فقط المبلغ المدفوع فوراً عند الإنشاء
+        sum_inv_paid = sum((inv.paid_amount or 0) for inv in self.invoices if not inv.is_returned)
+        return sum_payments + sum_inst + sum_inv_paid
 
     def total_returns(self):
         return sum(r.total_amount for r in self.returns)
@@ -114,6 +123,10 @@ class Invoice(db.Model):
     receipt_image = db.Column(db.String(200))
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     creator = db.relationship('User', foreign_keys=[created_by])
+    modified_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    modifier = db.relationship('User', foreign_keys=[modified_by])
+    previous_due = db.Column(db.Float, default=0)
+    balance_after = db.Column(db.Float, default=0)
     notes = db.Column(db.Text)
     items = db.relationship('InvoiceItem', backref='invoice', lazy=True, cascade='all, delete-orphan')
     returns = db.relationship('Return', backref='invoice', lazy=True)
@@ -185,7 +198,13 @@ class Supplier(db.Model):
         return sum(p.total for p in self.purchases)
 
     def total_paid(self):
-        return sum(p.amount for p in self.payments)
+        # الدفعات المسجلة + مبالغ أقساط المورد المدفوعة + الدفع الفوري عند إنشاء أمر الشراء
+        sum_payments = sum(p.amount for p in self.payments)
+        sum_inst = sum(ip.amount for ip in SupplierInstallmentPayment.query.filter(
+            SupplierInstallmentPayment.plan_id.in_([pl.id for pl in self.installment_plans])
+        ).all())
+        sum_pur_paid = sum((p.paid_amount or 0) for p in self.purchases)
+        return sum_payments + sum_inst + sum_pur_paid
 
     def balance(self):
         return self.total_purchased() - self.total_paid()

@@ -287,7 +287,7 @@ function bindTabNavigation(row) {
 
 function bindUnitToggle(input) {
     if (!input) return;
-    var units = ['ق', 'ك', 'ع'];
+    var units = ['ق', 'ك', 'د'];
     input.addEventListener('click', function() {
         var idx = units.indexOf(this.value);
         this.value = units[(idx + 1) % units.length];

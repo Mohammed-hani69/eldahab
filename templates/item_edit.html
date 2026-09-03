@@ -23,7 +23,7 @@
                         <div class="form-group">
                             <label><i class="fas fa-ruler-horizontal" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> الفئة</label>
                             <select name="unit_type" class="form-control">
-                                {% for u in ['ق', 'ك', 'ع'] %}
+                                {% for u in ['ق', 'ك', 'د'] %}
                                 <option value="{{ u }}" {% if item.unit_type == u %}selected{% endif %}>{{ u }}</option>
                                 {% endfor %}
                             </select>
