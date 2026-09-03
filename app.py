@@ -123,6 +123,7 @@ INSTALLMENT_STATUS = {
 
 PAGES = {
     'dashboard': {'name': 'لوحة التحكم', 'icon': 'fa-chart-pie', 'group': 'الرئيسية'},
+    'analytics': {'name': 'تحليل البيانات', 'icon': 'fa-chart-line', 'group': 'الرئيسية'},
     'customers': {'name': 'قائمة العملاء', 'icon': 'fa-users', 'group': 'العملاء'},
     'customer_add': {'name': 'اضافة عميل', 'icon': 'fa-user-plus', 'group': 'العملاء'},
     'invoices': {'name': 'الفواتير', 'icon': 'fa-file-invoice-dollar', 'group': 'الفواتير'},
@@ -141,6 +142,7 @@ PAGES = {
 
 PAGE_MAP = {
     'dashboard': 'dashboard',
+    'analytics': 'analytics',
     'customers_list': 'customers',
     'customer_add': 'customer_add',
     'customer_profile': 'customers',
@@ -526,6 +528,180 @@ def dashboard():
         supplier_overdue=supplier_overdue,
         ACCOUNT_TYPES=ACCOUNT_TYPES
     )
+
+
+@app.route('/analytics')
+@login_required
+def analytics():
+    period = request.args.get('period', 'week')
+
+    # اختيار قالب التجميع الزمني + عدد الفترات المعروضة
+    if period == 'day':
+        fmt = '%Y-%m-%d'
+        label_fmt = '%d/%m'
+        buckets = 30
+        period_label = 'آخر 30 يوم'
+    elif period == 'week':
+        fmt = '%Y-%W'
+        label_fmt = None
+        buckets = 16
+        period_label = 'آخر 16 أسبوع'
+    else:  # month
+        fmt = '%Y-%m'
+        label_fmt = '%m/%Y'
+        buckets = 12
+        period_label = 'آخر 12 شهر'
+
+    # --- سلاسل زمنية (إيرادات / مشتريات / مدفوعات محصلة / مدفوعات موردين) ---
+    rev_rows = db.session.query(
+        func.strftime(fmt, Invoice.date).label('b'),
+        func.coalesce(func.sum(Invoice.total), 0).label('v')
+    ).filter(Invoice.is_returned == False).group_by('b').all()
+    ret_rows = db.session.query(
+        func.strftime(fmt, Return.date).label('b'),
+        func.coalesce(func.sum(Return.total_amount), 0).label('v')
+    ).group_by('b').all()
+    pur_rows = db.session.query(
+        func.strftime(fmt, Purchase.date).label('b'),
+        func.coalesce(func.sum(Purchase.total), 0).label('v')
+    ).group_by('b').all()
+    pay_c_rows = db.session.query(
+        func.strftime(fmt, Payment.date).label('b'),
+        func.coalesce(func.sum(Payment.amount), 0).label('v')
+    ).group_by('b').all()
+    pay_s_rows = db.session.query(
+        func.strftime(fmt, SupplierPayment.date).label('b'),
+        func.coalesce(func.sum(SupplierPayment.amount), 0).label('v')
+    ).group_by('b').all()
+
+    def series_map(rows):
+        return {r.b: (r.v or 0) for r in rows}
+
+    rev_map = series_map(rev_rows)
+    ret_map = series_map(ret_rows)
+    pur_map = series_map(pur_rows)
+    payc_map = series_map(pay_c_rows)
+    pays_map = series_map(pay_s_rows)
+
+    # بناء الفترات الزمنية المتتالية (لآخر N فترة متاحة من البيانات)
+    from datetime import timedelta as _td
+    now = datetime.utcnow()
+    buckets_keys = []
+    week_label_map = {}
+    if period == 'day':
+        for i in range(buckets - 1, -1, -1):
+            d = (now - _td(days=i)).date()
+            buckets_keys.append(d.strftime('%Y-%m-%d'))
+    elif period == 'month':
+        for i in range(buckets - 1, -1, -1):
+            y = now.year
+            m = now.month - i
+            while m <= 0:
+                m += 12
+                y -= 1
+            buckets_keys.append(f"{y}-{m:02d}")
+    else:  # week (ISO year-week)
+        seen = set()
+        cur = now.date()
+        for i in range(buckets - 1, -1, -1):
+            d = cur - _td(weeks=i)
+            kw = '%d-%02d' % (d.isocalendar()[0], d.isocalendar()[1])
+            if kw in seen:
+                continue
+            seen.add(kw)
+            wk_start = d - _td(days=d.weekday())
+            wk_end = wk_start + _td(days=6)
+            buckets_keys.append(kw)
+            week_label_map[kw] = f"{wk_start.strftime('%d/%m')} - {wk_end.strftime('%d/%m')}"
+
+    chart_rev = []
+    chart_pur = []
+    chart_net = []
+    chart_labels = []
+    for bk in buckets_keys:
+        if period == 'week':
+            chart_labels.append(week_label_map.get(bk, bk))
+        else:
+            chart_labels.append(bk)
+        rev = rev_map.get(bk, 0)
+        pur = pur_map.get(bk, 0)
+        chart_rev.append(round(rev, 2))
+        chart_pur.append(round(pur, 2))
+        chart_net.append(round(rev - pur, 2))
+
+    # --- إجماليات الفترة المحددة (آخر يوم / أسبوع / شهر مكتمل) ---
+    # أجمالي الأرقام الكلية للمدة المختارة من البيانات كلها
+    period_sum = lambda m: round(sum(m.get(bk, 0) for bk in buckets_keys), 2)
+    totals = {
+        'revenue': period_sum(rev_map),
+        'purchases': period_sum(pur_map),
+        'net': period_sum({k: (rev_map.get(k, 0) - pur_map.get(k, 0)) for k in buckets_keys}),
+        'returns': period_sum(ret_map),
+        'collected': period_sum(payc_map),
+        'paid_suppliers': period_sum(pays_map),
+    }
+    totals['invoice_count'] = Invoice.query.filter_by(is_returned=False).count()
+    totals['all_collected'] = round((db.session.query(func.coalesce(func.sum(Payment.amount), 0)).scalar() or 0), 2)
+    totals['all_revenue'] = round((db.session.query(func.coalesce(func.sum(Invoice.total), 0)).filter_by(is_returned=False).scalar() or 0), 2)
+
+    # --- أهم الأصناف مبيعاً (من فواتير الفترة الأخيرة) ---
+    from sqlalchemy import func as _f
+    # نأخذ كل الأصناف المبيعة مرتبة بالكمية
+    top_items = db.session.query(
+        InvoiceItem.item_name.label('name'),
+        _f.coalesce(_f.sum(InvoiceItem.quantity), 0).label('qty'),
+        _f.coalesce(_f.sum(InvoiceItem.total), 0).label('val')
+    ).join(Invoice, Invoice.id == InvoiceItem.invoice_id)\
+     .filter(Invoice.is_returned == False)\
+     .group_by(InvoiceItem.item_name)\
+     .order_by(_f.sum(InvoiceItem.total).desc())\
+     .limit(10).all()
+
+    # --- طرق الدفع المستخدمة (حسب الفترة) ---
+    pm_rows = db.session.query(
+        Invoice.payment_method,
+        _f.count(Invoice.id),
+        _f.coalesce(_f.sum(Invoice.total), 0)
+    ).filter(Invoice.is_returned == False).group_by(Invoice.payment_method).all()
+    payment_methods = []
+    for row in pm_rows:
+        payment_methods.append({
+            'method': PAYMENT_METHODS.get(row[0], row[0] or 'كاش'),
+            'count': row[1],
+            'total': round(row[2] or 0, 2)
+        })
+
+    # --- العملاء الأكثر شراءً ---
+    top_customers = db.session.query(
+        Customer.name.label('name'),
+        _f.coalesce(_f.sum(Invoice.total), 0).label('val'),
+        _f.count(Invoice.id).label('cnt')
+    ).join(Invoice, Invoice.customer_id == Customer.id)\
+     .filter(Invoice.is_returned == False)\
+     .group_by(Customer.id)\
+     .order_by(_f.sum(Invoice.total).desc())\
+     .limit(8).all()
+
+    # --- أنماط الدفع (نقداً/آجل/تقسيط) ---
+    type_rows = db.session.query(
+        Invoice.payment_type,
+        _f.coalesce(_f.sum(Invoice.total), 0)
+    ).filter(Invoice.is_returned == False).group_by(Invoice.payment_type).all()
+    payment_types = [{'type': PAYMENT_TYPES.get(r[0], r[0]), 'total': round(r[1] or 0, 2)} for r in type_rows]
+
+    # --- عملاء جدد ---
+    new_customers_count = Customer.query.count()
+
+    # --- متوسط قيمة الفاتورة ---
+    avg_invoice = round(totals['all_revenue'] / totals['invoice_count'], 2) if totals['invoice_count'] else 0
+
+    return render_template('analytics.html',
+        period=period, period_label=period_label,
+        chart_labels=chart_labels, chart_rev=chart_rev, chart_pur=chart_pur, chart_net=chart_net,
+        totals=totals, top_items=top_items, payment_methods=payment_methods,
+        top_customers=top_customers, payment_types=payment_types,
+        new_customers_count=new_customers_count, avg_invoice=avg_invoice,
+        PAYMENT_TYPES=PAYMENT_TYPES, APP_NAME='El Dahab')
 
 
 @app.route('/employees')

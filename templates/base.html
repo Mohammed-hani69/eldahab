@@ -129,6 +129,11 @@
                     <span class="icon"><i class="fas fa-chart-pie"></i></span> لوحة التحكم
                 </a>
                 {% endif %}
+                {% if current_user.is_admin or current_user.has_permission('analytics') %}
+                <a href="{{ url_for('analytics') }}" class="nav-link {% if request.endpoint == 'analytics' %}active{% endif %}">
+                    <span class="icon"><i class="fas fa-chart-line"></i></span> تحليل البيانات
+                </a>
+                {% endif %}
                 {% if current_user.is_admin or current_user.has_permission('customers') or current_user.has_permission('customer_add') %}
                 <div class="nav-section">العملاء</div>
                 {% if current_user.is_admin or current_user.has_permission('customers') %}
