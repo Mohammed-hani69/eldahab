@@ -236,6 +236,10 @@ with app.app_context():
             db.session.execute(db.text("ALTER TABLE purchases ADD COLUMN receipt_image VARCHAR(200)"))
         if 'created_by' not in purchase_cols:
             db.session.execute(db.text("ALTER TABLE purchases ADD COLUMN created_by INTEGER"))
+        if 'previous_due' not in purchase_cols:
+            db.session.execute(db.text("ALTER TABLE purchases ADD COLUMN previous_due FLOAT DEFAULT 0"))
+        if 'balance_after' not in purchase_cols:
+            db.session.execute(db.text("ALTER TABLE purchases ADD COLUMN balance_after FLOAT DEFAULT 0"))
 
         purchase_item_cols = {c['name'] for c in inspector.get_columns('purchase_items')}
         if 'unit_type' not in purchase_item_cols:
@@ -866,8 +870,9 @@ def _customer_statement_rows(c):
         net = max(0, (inv.total or 0) - (inv.discount or 0))
         entries.append({'date': inv.date, 'label': f'فاتورة بيع رقم {inv.invoice_number}',
                         'debit': net, 'credit': 0})
+        # الدفع الفوري يُحتسب فقط إذا لم تُسجل له دفعات منفصلة (تجنب الازدواج)
         upfront = max(0, (inv.paid_amount or 0))
-        if upfront > 0:
+        if upfront > 0 and not inv.payments:
             if inv.payment_type == 'cash':
                 lbl = 'مدفوع نقدي مع الفاتورة'
             elif inv.payment_type == 'installment':
@@ -1074,9 +1079,11 @@ def invoice_add():
             inv.remaining = 0
             inv.balance_after = max(0, prev_due + net - net)
         elif payment_type == 'credit':
-            inv.paid_amount = 0
-            inv.remaining = net
-            inv.balance_after = max(0, prev_due + net)
+            # الآجل: يمكن للعميل دفع مقدم نقدي (down_payment) والباقي آجل
+            down = min(float(request.form.get('down_payment', 0) or 0), net)
+            inv.paid_amount = down
+            inv.remaining = max(0, net - down)
+            inv.balance_after = max(0, prev_due + net - down)
         elif payment_type == 'installment':
             down = float(request.form.get('down_payment', 0) or 0)
             inv.paid_amount = down
@@ -1186,8 +1193,17 @@ def invoice_edit(invoice_id):
             db.func.coalesce(db.func.sum(Payment.amount), 0)
         ).filter(Payment.invoice_id == inv.id).scalar()
 
+        # الآجل: السماح بتعديل المقدم النقدي (down_payment)
+        if inv.payment_type == 'credit':
+            want_down = min(float(request.form.get('down_payment', 0) or 0), net)
+            paid = payments_total
+            # المقدم الجديد يمكن أن يزيد/ينقص المبلغ المدفوع فوراً المسجل
+            inv.paid_amount = want_down
+            inv.remaining = max(0, net - want_down - paid)
+
         # paid_amount يظل الدفعة الفورية عند الإنشاء؛ المدفوع الباقي محسوب من سجلات الدفعات
-        inv.remaining = max(0, net - (inv.paid_amount or 0) - payments_total)
+        else:
+            inv.remaining = max(0, net - (inv.paid_amount or 0) - payments_total)
 
         # اعادة حساب اللقطة التراكمية الثابتة عند التعديل
         # حفظ previous_due الحالي (الثابت) وبناء balance_after عليه
@@ -1199,7 +1215,7 @@ def invoice_edit(invoice_id):
             ).order_by(Invoice.id.desc()).first()
             cur_prev = (prev_inv_edit.balance_after if prev_inv_edit and prev_inv_edit.balance_after else 0) or 0
         inv.previous_due = max(0, cur_prev)
-        inv.balance_after = max(0, round((inv.previous_due or 0) + net - payments_total, 2))
+        inv.balance_after = max(0, round((inv.previous_due or 0) + net - (inv.paid_amount or 0) - payments_total, 2))
 
         if inv.payment_type == 'installment':
             plan = InstallmentPlan.query.filter_by(invoice_id=inv.id).first()
@@ -1288,7 +1304,8 @@ def invoice_view(invoice_id):
         installment_plan=installment_plan, installments=installments,
         installment_payments=installment_payments, PAYMENT_TYPES=PAYMENT_TYPES,
         cust_balance_total=cust_balance_total, cust_balance_list=cust_balance_list,
-        previous_dues=max(0, prev_saved), balance_after=max(0, after_saved))
+        previous_dues=max(0, prev_saved), balance_after=max(0, after_saved),
+        invoice_payments=inv.payments)
 
 
 @app.route('/invoices/<int:invoice_id>/delete', methods=['POST'])
@@ -1329,7 +1346,7 @@ def payment_add(customer_id):
         except (ValueError, AssertionError):
             flash('يجب ادخال مبلغ صحيح', 'danger')
             return redirect(url_for('payment_add', customer_id=c.id))
-        invoice_id = int(request.form.get('invoice_id')) if request.form.get('invoice_id') else None
+        invoice_id = None
         p = Payment(
             customer_id=c.id,
             amount=amount,
@@ -1343,16 +1360,16 @@ def payment_add(customer_id):
         )
         db.session.add(p)
 
-        # اذا لم يحدد المستخدم فاتورة، تُسجل الدفعة تلقائياً على احدث فاتورة للعميل
-        if not invoice_id:
-            latest_inv = Invoice.query.filter(
-                Invoice.customer_id == c.id,
-                Invoice.is_returned == False,
-                Invoice.remaining > 0
-            ).order_by(Invoice.id.desc()).first()
-            if latest_inv:
-                invoice_id = latest_inv.id
-                p.invoice_id = latest_inv.id
+        # الدفعة تُسجل تلقائياً على أحدث فاتورة للعميل (الطبقة التراكمية الحالية)
+        # كما اتفقنا: الحساب تراكمي، والدفعة تخصم من الاجمالي المستحق على العميل
+        # وتظهر في أحدث فاتورة موجودة وقت الدفع (الدفعة لاحقة لها)
+        latest_inv = Invoice.query.filter(
+            Invoice.customer_id == c.id,
+            Invoice.is_returned == False
+        ).order_by(Invoice.id.desc()).first()
+        if latest_inv:
+            invoice_id = latest_inv.id
+            p.invoice_id = latest_inv.id
 
         if invoice_id:
             inv = Invoice.query.get(invoice_id)
@@ -1363,7 +1380,7 @@ def payment_add(customer_id):
                     db.func.coalesce(db.func.sum(Payment.amount), 0)
                 ).filter(Payment.invoice_id == inv.id).scalar()
                 inv.remaining = max(0, (inv.total or 0) - total_paid_inv)
-                # تحديث المستحق التراكمي الثابت لهذه الفاتورة
+                # تحديث المستحق التراكمي الثابت لهذه الفاتورة (الطبقة الحالية)
                 if inv.balance_after is not None:
                     inv.balance_after = max(0, round((inv.balance_after or 0) - amount, 2))
 
@@ -1402,7 +1419,10 @@ def payment_edit(payment_id):
         except (ValueError, AssertionError):
             flash('يجب ادخال مبلغ صحيح', 'danger')
             return redirect(url_for('payment_edit', payment_id=p.id))
-        new_invoice_id = int(request.form['invoice_id']) if request.form.get('invoice_id') else None
+
+        # الدفعة تبقى مرتبطة بأحدث فاتورة كانت موجودة وقت إنشائها (الطبقة التراكمية)
+        # تعديل المبلغ فقط يعيد حساب المستحق التراكمي لنفس الفاتورة
+        new_invoice_id = old_invoice_id
 
         if old_invoice_id:
             old_inv = Invoice.query.get(old_invoice_id)
@@ -1411,7 +1431,9 @@ def payment_edit(payment_id):
                     db.func.coalesce(db.func.sum(Payment.amount), 0)
                 ).filter(Payment.invoice_id == old_inv.id, Payment.id != p.id).scalar()
                 # paid_amount يظل الدفعة الفورية عند الإنشاء ولا يُعاد من سجلات الدفعات
-                old_inv.remaining = max(0, (old_inv.total or 0) - (old_inv.discount or 0) - (old_inv.paid_amount or 0) - payments_total)
+                old_inv.remaining = max(0, (old_inv.total or 0) - (old_inv.discount or 0) - (old_inv.paid_amount or 0) - payments_total - new_amount)
+                if old_inv.balance_after is not None:
+                    old_inv.balance_after = max(0, round((old_inv.balance_after or 0) - (new_amount - old_amount), 2))
 
         p.amount = new_amount
         p.invoice_id = new_invoice_id
@@ -1423,14 +1445,6 @@ def payment_edit(payment_id):
             p.receipt_image = new_receipt
         p.next_payment_date = datetime.strptime(request.form['next_payment_date'], '%Y-%m-%d').date() if request.form.get('next_payment_date') else None
         p.next_payment_amount = float(request.form['next_payment_amount']) if request.form.get('next_payment_amount') else None
-
-        if new_invoice_id:
-            new_inv = Invoice.query.get(new_invoice_id)
-            if new_inv:
-                payments_total = db.session.query(
-                    db.func.coalesce(db.func.sum(Payment.amount), 0)
-                ).filter(Payment.invoice_id == new_inv.id, Payment.id != p.id).scalar()
-                new_inv.remaining = max(0, (new_inv.total or 0) - (new_inv.discount or 0) - (new_inv.paid_amount or 0) - (payments_total + new_amount))
 
         db.session.commit()
         flash('تم تعديل الدفعة بنجاح', 'success')
@@ -1767,7 +1781,7 @@ def _supplier_statement_rows(s):
         entries.append({'date': pur.date, 'label': f'فاتورة مشتريات رقم {pur.purchase_number}',
                         'debit': pur.total or 0, 'credit': 0})
         upfront = max(0, (pur.paid_amount or 0))
-        if upfront > 0:
+        if upfront > 0 and not pur.payments:
             if pur.payment_type == 'cash':
                 lbl = 'مدفوع نقدي مع امر الشراء'
             elif pur.payment_type == 'installment':
@@ -1880,7 +1894,7 @@ def supplier_payment_add(supplier_id):
         except (ValueError, AssertionError):
             flash('يجب ادخال مبلغ صحيح', 'danger')
             return redirect(url_for('supplier_payment_add', supplier_id=s.id))
-        purchase_id = int(request.form.get('purchase_id')) if request.form.get('purchase_id') else None
+        purchase_id = None
         p = SupplierPayment(
             supplier_id=s.id,
             amount=amount,
@@ -1892,6 +1906,14 @@ def supplier_payment_add(supplier_id):
         )
         db.session.add(p)
 
+        # الدفعة تُسجل تلقائياً على أحدث فاتورة شراء للمورد (الطبقة التراكمية الحالية)
+        latest_pur = Purchase.query.filter(
+            Purchase.supplier_id == s.id
+        ).order_by(Purchase.id.desc()).first()
+        if latest_pur:
+            purchase_id = latest_pur.id
+            p.purchase_id = latest_pur.id
+
         if purchase_id:
             pur = Purchase.query.get(purchase_id)
             if pur:
@@ -1900,6 +1922,9 @@ def supplier_payment_add(supplier_id):
                     db.func.coalesce(db.func.sum(SupplierPayment.amount), 0)
                 ).filter(SupplierPayment.purchase_id == pur.id).scalar()
                 pur.remaining = max(0, (pur.total or 0) - total_paid_pur)
+                # تحديث المستحق التراكمي الثابت (الطبقة الحالية)
+                if pur.balance_after is not None:
+                    pur.balance_after = max(0, round((pur.balance_after or 0) - amount, 2))
 
         db.session.commit()
         flash('تم تسجيل الدفعة بنجاح', 'success')
@@ -1965,16 +1990,33 @@ def purchase_add():
             total += item_total
         p.total = total
 
+        # حساب اللقطة التراكمية الثابتة (مثل فاتورة المبيعات):
+        # previous_due = مستحق (balance_after) آخر أمر شراء سابق للمورد
+        # balance_after = previous_due + قيمة الفاتورة - دفعات فورية (كاش/مقدم)
+        prev_pur = Purchase.query.filter(
+            Purchase.supplier_id == p.supplier_id,
+            Purchase.id != p.id
+        ).order_by(Purchase.id.desc()).first()
+        prev_due = (prev_pur.balance_after if prev_pur and prev_pur.balance_after is not None else 0) or 0
+        if prev_due < 0:
+            prev_due = 0
+        p.previous_due = prev_due
+
         if payment_type == 'cash':
             p.paid_amount = total
             p.remaining = 0
+            p.balance_after = max(0, prev_due + total - total)
         elif payment_type == 'credit':
-            p.paid_amount = 0
-            p.remaining = total
+            # الآجل: يمكن دفع مقدم نقدي عن المورد
+            down = min(float(request.form.get('down_payment', 0) or 0), total)
+            p.paid_amount = down
+            p.remaining = max(0, total - down)
+            p.balance_after = max(0, prev_due + total - down)
         elif payment_type == 'installment':
             down = float(request.form.get('down_payment', 0) or 0)
             p.paid_amount = down
             p.remaining = total - down
+            p.balance_after = max(0, prev_due + total - down)
 
             count = int(request.form.get('installment_count', 1) or 1)
             start_str = request.form.get('installment_start_date', '')
@@ -2034,9 +2076,32 @@ def purchase_view(purchase_id):
     installment_plan = SupplierInstallmentPlan.query.filter_by(purchase_id=p.id).first()
     installments = installment_plan.installments if installment_plan else []
     installment_payments = installment_plan.payments if installment_plan else []
+
+    # اللقطة التراكمية الثابتة (مثل فاتورة المبيعات)
+    prev_saved = p.previous_due if p.previous_due is not None else 0
+    after_saved = p.balance_after if p.balance_after is not None else 0
+    if prev_saved == 0 and after_saved == 0:
+        # fallback للفواتير القديمة المحسوبة يدوياً كمجموع تراكمي للمستحق
+        sup_total = 0
+        rem_this = 0
+        prev_pur_old = Purchase.query.filter(
+            Purchase.supplier_id == p.supplier_id,
+            Purchase.id < p.id
+        ).all()
+        for pp in prev_pur_old:
+            net = max(0, (pp.total or 0) - (pp.paid_amount or 0))
+            sup_total += net
+        this_net = max(0, (p.total or 0) - (p.paid_amount or 0))
+        rem_this = this_net
+        if sup_total > 0 or rem_this > 0:
+            prev_saved = max(0, round(sup_total, 2))
+            after_saved = max(0, round(sup_total + this_net, 2))
+
     return render_template('purchase_view.html', purchase=p,
         supplier_installment_plan=installment_plan, installments=installments,
-        installment_payments=installment_payments, PAYMENT_TYPES=PAYMENT_TYPES)
+        installment_payments=installment_payments, PAYMENT_TYPES=PAYMENT_TYPES,
+        previous_dues=max(0, prev_saved), balance_after=max(0, after_saved),
+        purchase_payments=p.payments)
 
 
 @app.route('/purchases/<int:purchase_id>/edit', methods=['GET', 'POST'])
@@ -2099,12 +2164,14 @@ def purchase_edit(purchase_id):
             p.paid_amount = total
             p.remaining = 0
         elif payment_type == 'credit':
-            p.paid_amount = 0
-            p.remaining = max(0, total - payments_total)
+            # الآجل: السماح بتعديل المقدم النقدي للمورد
+            want_down = min(float(request.form.get('down_payment', 0) or 0), total)
+            p.paid_amount = want_down
+            p.remaining = max(0, total - want_down - payments_total)
         elif payment_type == 'installment':
             down = float(request.form.get('down_payment', 0) or 0)
             p.paid_amount = down
-            p.remaining = max(0, total - payments_total)
+            p.remaining = max(0, total - down - payments_total)
 
             count = int(request.form.get('installment_count', 1) or 1)
             start_str = request.form.get('installment_start_date', '')
@@ -2143,6 +2210,17 @@ def purchase_edit(purchase_id):
                     status='pending'
                 )
                 db.session.add(inst)
+
+        # اعادة حساب اللقطة التراكمية الثابتة (مثل فاتورة المبيعات)
+        cur_prev = p.previous_due if p.previous_due is not None else 0
+        if cur_prev == 0:
+            prev_pur_edit = Purchase.query.filter(
+                Purchase.supplier_id == p.supplier_id,
+                Purchase.id != p.id
+            ).order_by(Purchase.id.desc()).first()
+            cur_prev = (prev_pur_edit.balance_after if prev_pur_edit and prev_pur_edit.balance_after else 0) or 0
+        p.previous_due = max(0, cur_prev)
+        p.balance_after = max(0, round((p.previous_due or 0) + total - (p.paid_amount or 0) - payments_total, 2))
 
         db.session.commit()
         EntityLock.query.filter_by(entity_type='supplier', entity_id=p.supplier_id, user_id=session['user_id']).delete()

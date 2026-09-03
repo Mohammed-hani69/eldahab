@@ -67,7 +67,7 @@
                         </div>
                         <div class="form-group" id="downPaymentGroup" style="display:none;">
                             <label><i class="fas fa-hand-holding-usd" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> مبلغ المقدم</label>
-                            <input type="number" name="down_payment" class="form-control" min="0" step="any" placeholder="0" value="{% if invoice and invoice.payment_type == 'installment' %}{{ invoice.paid_amount or 0 }}{% else %}0{% endif %}">
+                            <input type="number" name="down_payment" class="form-control" min="0" step="any" placeholder="0" value="{% if invoice and invoice.payment_type in ['installment', 'credit'] %}{{ invoice.paid_amount or 0 }}{% else %}0{% endif %}">
                         </div>
                         <div class="form-group">
                             <label><i class="fas fa-camera" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> صورة الايصال</label>
@@ -146,7 +146,7 @@
                             </div>
                             <input type="number" name="item_qty_{{ loop.index0 }}" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)" value="{{ item.quantity }}">
                             <input type="text" name="item_unit_{{ loop.index0 }}" class="unit-type-input item-unit" value="{{ item.unit_type or 'ق' }}" readonly>
-                            <input type="number" name="item_price_{{ loop.index0 }}" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this)" value="{{ item.unit_price }}">
+                            <input type="number" name="item_price_{{ loop.index0 }}" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this); clearRowError(this)" value="{{ item.unit_price }}">
                             <span class="row-total">{{ "{:,.0f}".format(item.total or 0) }}</span>
                             <button type="button" class="btn-remove" onclick="removeRow(this)">x</button>
                         </div>
@@ -160,7 +160,7 @@
                             </div>
                             <input type="number" name="item_qty_0" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)">
                             <input type="text" name="item_unit_0" class="unit-type-input item-unit" value="ق" readonly>
-                            <input type="number" name="item_price_0" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this)">
+                            <input type="number" name="item_price_0" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this); clearRowError(this)">
                             <span class="row-total">0</span>
                             <button type="button" class="btn-remove" onclick="removeRow(this)">x</button>
                         </div>
@@ -273,6 +273,10 @@
     color: var(--text-muted);
     text-align: center;
 }
+.input-error {
+    border: 2px solid #dc2626 !important;
+    background: #fff5f5 !important;
+}
 </style>
 
 <script>
@@ -288,6 +292,10 @@ function togglePaymentFields() {
     } else if (pt === 'cash') {
         pmGroup.style.display = '';
         dpGroup.style.display = 'none';
+        instFields.style.display = 'none';
+    } else if (pt === 'credit') {
+        pmGroup.style.display = 'none';
+        dpGroup.style.display = '';
         instFields.style.display = 'none';
     } else {
         pmGroup.style.display = 'none';
@@ -376,7 +384,7 @@ function addRow(focusField) {
         </div>
         <input type="number" name="item_qty_${rowIndex}" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)">
         <input type="text" name="item_unit_${rowIndex}" class="unit-type-input item-unit" value="ق" readonly>
-        <input type="number" name="item_price_${rowIndex}" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this)">
+        <input type="number" name="item_price_${rowIndex}" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this); clearRowError(this);">
         <span class="row-total">0</span>
         <button type="button" class="btn-remove" onclick="removeRow(this)">x</button>
     `;
@@ -443,6 +451,14 @@ function calcRow(el) {
     const price = parseFloat(row.querySelector('.item-price').value) || 0;
     row.querySelector('.row-total').textContent = (qty * price).toLocaleString('ar-EG');
     calcGrandTotal();
+}
+
+function clearRowError(input) {
+    input.classList.remove('input-error');
+}
+
+function clearQtyError(input) {
+    input.classList.remove('input-error');
 }
 
 function calcGrandTotal() {
@@ -762,11 +778,34 @@ document.querySelectorAll('#itemsBody .item-row').forEach(function(row) {
         releaseLock();
     });
 
-    document.getElementById('invoiceForm').addEventListener('submit', function() {
+    document.getElementById('invoiceForm').addEventListener('submit', function(e) {
         if (!lockAcquired && currentCustomerId) {
             alert('لا يمكنك حفظ الفاتورة. العميل مقفل من قبل موظف آخر.');
+            e.preventDefault();
             return false;
         }
+        // التحقق المسبق: منع ارسال النموذج اذا وجد صنف له كمية بدون سعر
+        // حتى لا يضيع ما ادخله المستخدم (بدون ريلود)
+        var rows = document.querySelectorAll('#itemsBody .item-row');
+        var firstBad = null;
+        rows.forEach(function(row) {
+            var name = row.querySelector('.item-name-input').value.trim();
+            var qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+            var price = row.querySelector('.item-price').value.trim();
+            if (name && qty > 0 && (price === '' || parseFloat(price) <= 0)) {
+                var priceInput = row.querySelector('.item-price');
+                priceInput.classList.add('input-error');
+                if (!firstBad) firstBad = priceInput;
+            }
+        });
+        if (firstBad) {
+            e.preventDefault();
+            alert('لا يمكن حفظ الفاتورة: يوجد صنف له كمية بدون سعر.\nيرجى اضافة السعر ثم الحفظ من جديد.');
+            firstBad.focus();
+            firstBad.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return false;
+        }
+        return true;
     });
 })();
 

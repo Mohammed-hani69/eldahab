@@ -215,6 +215,42 @@
         </div>
     </div>
     {% endif %}
+
+    {% if invoice_payments %}
+    <div style="padding:0 16px 14px;">
+        <div style="border:2px solid rgba(16,185,129,0.35);border-radius:8px;overflow:hidden;">
+            <div style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:8px 12px;font-weight:800;font-size:0.82rem;"><i class="fas fa-money-bill-wave" style="margin-left:4px;"></i> دفعات تم سدادها على هذه الفاتورة</div>
+            <table class="compact-table">
+                <thead>
+                    <tr>
+                        <th>التاريخ</th>
+                        <th>المبلغ</th>
+                        <th>طريقة الدفع</th>
+                        <th>الموظف</th>
+                        <th>ملاحظات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for p in invoice_payments|sort(attribute='date') %}
+                    <tr>
+                        <td>{{ p.date.strftime('%Y-%m-%d') }}</td>
+                        <td style="font-weight:700;color:#059669;">{{ "{:,.0f}".format(p.amount or 0) }} ج.م</td>
+                        <td>{{ PAYMENT_METHODS.get(p.payment_method) or 'كاش' }}</td>
+                        <td>{{ (p.creator.full_name or p.creator.username) if p.creator else '—' }}</td>
+                        <td>{{ p.notes or '—' }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="2" style="font-weight:800;color:#059669;">اجمالي مدفوعات هذه الفاتورة: {{ "{:,.0f}".format(invoice_payments|sum(attribute='amount')) }} ج.م</td>
+                        <td colspan="3"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 <div style="margin-top:20px;display:flex;gap:12px;" class="no-print">

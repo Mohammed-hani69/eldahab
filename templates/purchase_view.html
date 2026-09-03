@@ -92,6 +92,27 @@
             <span class="total-label">الاجمالي الكلي</span>
             <span class="total-value">{{ "{:,.0f}".format(purchase.total or 0) }} ج.م</span>
         </div>
+        {% set pur_net = (purchase.total or 0) - (purchase.paid_amount or 0) %}
+        {% if previous_dues > 0 or balance_after > 0 %}
+        <div class="totals-row">
+            <div class="grand-total compact-total" style="padding:6px 10px;background:var(--bg);">
+                <span class="total-label"><i class="fas fa-clock-rotate-left" style="margin-left:4px;"></i> المستحق السابق</span>
+                <span class="total-value">{{ "{:,.0f}".format(previous_dues) }} ج.م</span>
+            </div>
+            <div class="grand-total compact-total" style="padding:6px 10px;background:var(--bg);">
+                <span class="total-label">قيمة الفاتورة</span>
+                <span class="total-value">{{ "{:,.0f}".format(pur_net) }} ج.م</span>
+            </div>
+            <div class="grand-total compact-total" style="padding:6px 10px;background:var(--bg);">
+                <span class="total-label">المدفوع (كاش/مقدم)</span>
+                <span class="total-value">{{ "{:,.0f}".format(purchase.paid_amount or 0) }} ج.م</span>
+            </div>
+            <div class="grand-total compact-total" style="padding:6px 10px;background:rgba(59,130,246,0.08);">
+                <span class="total-label"><i class="fas fa-exclamation-triangle" style="margin-left:4px;"></i> المستحق بعد الفاتورة</span>
+                <span class="total-value">{{ "{:,.0f}".format(balance_after) }} ج.م</span>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     {% if supplier_installment_plan %}
@@ -120,6 +141,42 @@
                 </tbody>
             </table>
             {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if purchase_payments %}
+    <div style="padding:0 16px 14px;">
+        <div style="border:2px solid rgba(16,185,129,0.35);border-radius:8px;overflow:hidden;">
+            <div style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:8px 12px;font-weight:800;font-size:0.82rem;"><i class="fas fa-money-bill-wave" style="margin-left:4px;"></i> دفعات تم سدادها على هذا الأمر</div>
+            <table class="compact-table">
+                <thead>
+                    <tr>
+                        <th>التاريخ</th>
+                        <th>المبلغ</th>
+                        <th>طريقة الدفع</th>
+                        <th>الموظف</th>
+                        <th>ملاحظات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for p in purchase_payments|sort(attribute='date') %}
+                    <tr>
+                        <td>{{ p.date.strftime('%Y-%m-%d') }}</td>
+                        <td style="font-weight:700;color:#059669;">{{ "{:,.0f}".format(p.amount or 0) }} ج.م</td>
+                        <td>{{ PAYMENT_METHODS.get(p.payment_method) or 'كاش' }}</td>
+                        <td>{{ (p.creator.full_name or p.creator.username) if p.creator else '—' }}</td>
+                        <td>{{ p.notes or '—' }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="2" style="font-weight:800;color:#059669;">اجمالي مدفوعات هذا الأمر: {{ "{:,.0f}".format(purchase_payments|sum(attribute='amount')) }} ج.م</td>
+                        <td colspan="3"></td>
+                    </tr>
+                </tfoot>
+            </table>
         </div>
     </div>
     {% endif %}

@@ -49,13 +49,8 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label><i class="fas fa-file-invoice" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> ارجع للفاتورة (اختياري)</label>
-                        <select name="invoice_id" class="form-control">
-                            <option value="">-- بدون فاتورة محددة --</option>
-                            {% for inv in unpaid_invoices %}
-                            <option value="{{ inv.id }}" {% if payment and payment.invoice_id == inv.id %}selected{% endif %}>{{ inv.invoice_number }} - {{ "{:,.0f}".format(inv.total or 0) }} ج.م (متبقي: {{ "{:,.0f}".format(inv.remaining or 0) }})</option>
-                            {% endfor %}
-                        </select>
+                        <label><i class="fas fa-file-invoice" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> الفاتورة</label>
+                        <input type="text" class="form-control" value="يُخصم تلقائياً من الاجمالي المستحق على العميل" disabled style="background:var(--bg);color:var(--text-secondary);">
                     </div>
                 </div>
                 <div class="form-row" style="margin-bottom:0;">
