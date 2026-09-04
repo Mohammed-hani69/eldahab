@@ -7,6 +7,15 @@
 
 <div id="lockBanner" style="display:none;padding:14px 18px;border-radius:var(--radius-sm);margin-bottom:16px;font-weight:600;font-size:0.88rem;"></div>
 
+<div id="inlineToast" style="display:none;align-items:flex-start;gap:10px;margin-bottom:16px;padding:14px 18px;border-radius:var(--radius-sm);background:linear-gradient(135deg,#fff5f5,#fed7d7);border:1.5px solid #fca5a5;color:#c53030;font-weight:600;font-size:0.88rem;">
+    <i class="fas fa-exclamation-triangle" style="margin-top:2px;color:#dc2626;"></i>
+    <div style="flex:1;">
+        <strong>لا يمكن حفظ الفاتورة:</strong> يوجد صنف له كمية بدون سعر.
+        <div style="font-size:0.8rem;margin-top:4px;font-weight:500;color:#9b2c2c;">يرجى وضع السعر في الحقل المظلل بالأحمر ثم اضغط حفظ من جديد.</div>
+    </div>
+    <button type="button" onclick="this.parentElement.style.display='none'" style="background:none;border:none;color:#c53030;cursor:pointer;font-size:1rem;line-height:1;"><i class="fas fa-times"></i></button>
+</div>
+
 {% if no_price %}
 <div class="alert alert-danger" style="display:flex;align-items:center;gap:10px;margin-bottom:16px;border:1px solid #fca5a5;">
     <i class="fas fa-exclamation-triangle" style="color:#dc2626;"></i>
@@ -455,6 +464,8 @@ function calcRow(el) {
 
 function clearRowError(input) {
     input.classList.remove('input-error');
+    var toast = document.getElementById('inlineToast');
+    if (toast) toast.style.display = 'none';
 }
 
 function clearQtyError(input) {
@@ -800,7 +811,10 @@ document.querySelectorAll('#itemsBody .item-row').forEach(function(row) {
         });
         if (firstBad) {
             e.preventDefault();
-            alert('لا يمكن حفظ الفاتورة: يوجد صنف له كمية بدون سعر.\nيرجى اضافة السعر ثم الحفظ من جديد.');
+            // اظهار اشعار داخلي بدل نافذة المتصفح
+            var toast = document.getElementById('inlineToast');
+            toast.style.display = 'flex';
+            toast.scrollIntoView({ behavior: 'smooth', block: 'center' });
             firstBad.focus();
             firstBad.scrollIntoView({ behavior: 'smooth', block: 'center' });
             return false;
