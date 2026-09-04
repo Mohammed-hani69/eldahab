@@ -42,8 +42,21 @@
             <span style="font-size:0.78rem;color:var(--text-secondary);">| طريقة الدفع:</span>
             <span class="badge badge-gold">{{ PAYMENT_METHODS.get(invoice.payment_method) }}</span>
             {% endif %}
-            {% if invoice.receipt_image %}
-            <a href="{{ url_for('static', filename='uploads/receipts/' + invoice.receipt_image) }}" target="_blank" class="badge badge-navy" style="text-decoration:none;"><i class="fas fa-image" style="margin-left:2px;"></i> صورة الايصال</a>
+            {% set inv_images = parse_images(invoice.receipt_image) %}
+            {% if inv_images %}
+            <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+                {% for fname in inv_images %}
+                <div class="receipt-thumb no-print-inline" style="position:relative;width:64px;padding:4px;border:1px solid var(--border-light);border-radius:8px;background:#fff;display:inline-flex;flex-direction:column;align-items:center;gap:2px;">
+                    <a href="{{ url_for('static', filename='uploads/receipts/' + fname) }}" target="_blank" title="عرض الصورة" style="text-decoration:none;color:var(--navy);display:flex;flex-direction:column;align-items:center;gap:3px;">
+                        <i class="fas fa-file-image" style="font-size:1.5rem;color:var(--navy);"></i>
+                        <span style="font-size:0.55rem;color:var(--text-muted);">صورة {{ loop.index }}</span>
+                    </a>
+                    <form method="POST" action="{{ url_for('invoice_image_delete', invoice_id=invoice.id, idx=loop.index0, dest='view') }}" class="no-print" onsubmit="return confirm('هل انت متأكد من حذف هذه الصورة؟');" style="margin:0;display:inline;">
+                        <button type="submit" class="btn btn-danger" style="padding:1px 6px;font-size:0.6rem;" title="حذف الصورة"><i class="fas fa-trash"></i></button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
             {% endif %}
         </div>
         <div class="accountant-box">

@@ -29,7 +29,7 @@ db.init_app(app)
 
 @app.context_processor
 def inject_payment_methods():
-    return {'PAYMENT_METHODS': PAYMENT_METHODS}
+    return {'PAYMENT_METHODS': PAYMENT_METHODS, 'parse_images': parse_images}
 
 
 def login_required(f):
@@ -1327,6 +1327,24 @@ def invoice_delete(invoice_id):
     db.session.commit()
     flash('تم حذف الفاتورة بنجاح', 'success')
     return redirect(url_for('invoices_list'))
+
+
+@app.route('/invoices/<int:invoice_id>/image/<int:idx>/delete', methods=['POST'])
+@login_required
+def invoice_image_delete(invoice_id, idx):
+    inv = Invoice.query.get_or_404(invoice_id)
+    images = parse_images(inv.receipt_image)
+    if 0 <= idx < len(images):
+        delete_receipt_image(images[idx])
+        images.pop(idx)
+    inv.receipt_image = json.dumps(images) if images else ''
+    db.session.commit()
+    flash('تم حذف الصورة بنجاح', 'success')
+    # الرجوع لنفس الصفحة المصدر (عرض الفاتورة او نموذج التعديل)
+    dest = request.args.get('dest', 'view')
+    if dest == 'edit':
+        return redirect(url_for('invoice_edit', invoice_id=invoice_id))
+    return redirect(url_for('invoice_view', invoice_id=invoice_id))
 
 
 @app.route('/customers/<int:customer_id>/pay', methods=['GET', 'POST'])

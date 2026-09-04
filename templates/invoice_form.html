@@ -79,10 +79,23 @@
                             <input type="number" name="down_payment" class="form-control" min="0" step="any" placeholder="0" value="{% if invoice and invoice.payment_type in ['installment', 'credit'] %}{{ invoice.paid_amount or 0 }}{% else %}0{% endif %}">
                         </div>
                         <div class="form-group">
-                            <label><i class="fas fa-camera" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> صورة الايصال</label>
-                            <input type="file" name="receipt_image" class="form-control" accept="image/png,image/jpeg,image/webp,image/gif">
-                            {% if invoice and invoice.receipt_image %}
-                            <a href="{{ url_for('static', filename='uploads/receipts/' + invoice.receipt_image) }}" target="_blank" style="font-size:0.75rem;color:var(--navy);"><i class="fas fa-image"></i> عرض الايصال الحالي</a>
+                            <label><i class="fas fa-camera" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> صور الايصال (يمكن اختيار اكثر من صورة)</label>
+                            <input type="file" name="receipt_images" id="receiptImagesInput" class="form-control" accept="image/png,image/jpeg,image/webp,image/gif" multiple onchange="previewReceiptImages(this)">
+                            <div id="receiptPreview" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;direction:rtl;"></div>
+                            {% if invoice and invoice.receipt_image and parse_images(invoice.receipt_image) %}
+                            <div style="margin-top:8px;" id="existingReceipts">
+                                <label style="font-size:0.75rem;color:var(--navy);display:block;margin-bottom:4px;"><i class="fas fa-images"></i> الصور الحالية لهذه الفاتورة:</label>
+                                <div style="display:flex;flex-wrap:wrap;gap:10px;">
+                                {% for fname in parse_images(invoice.receipt_image) %}
+                                    <div class="receipt-thumb">
+                                        <a href="{{ url_for('static', filename='uploads/receipts/' + fname) }}" target="_blank"><i class="fas fa-file-image" style="font-size:1.6rem;color:var(--navy);"></i></a>
+                                        <form method="POST" action="{{ url_for('invoice_image_delete', invoice_id=invoice.id, idx=loop.index0, dest='edit') }}" class="no-print" onsubmit="return confirm('هل انت متأكد من حذف هذه الصورة؟');" style="margin:0;display:inline;">
+                                            <button type="submit" class="btn btn-danger" style="padding:1px 6px;font-size:0.62rem;" title="حذف الصورة"><i class="fas fa-trash"></i></button>
+                                        </form>
+                                    </div>
+                                {% endfor %}
+                                </div>
+                            </div>
                             {% endif %}
                         </div>
                     </div>
@@ -286,6 +299,44 @@
     border: 2px solid #dc2626 !important;
     background: #fff5f5 !important;
 }
+.receipt-thumb {
+    position: relative;
+    width: 96px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 6px;
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+}
+.receipt-thumb img {
+    width: 84px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 5px;
+}
+.receipt-thumb span {
+    font-size: 0.62rem;
+    color: var(--text-muted);
+    max-width: 90px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.receipt-thumb form {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+}
+.receipt-thumb a[target="_blank"] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+}
 </style>
 
 <script>
@@ -313,6 +364,26 @@ function togglePaymentFields() {
     }
 }
 togglePaymentFields();
+
+function previewReceiptImages(input) {
+    var box = document.getElementById('receiptPreview');
+    box.innerHTML = '';
+    if (!input.files || !input.files.length) return;
+    Array.from(input.files).forEach(function (file) {
+        if (!/^image\//.test(file.type)) return;
+        var thumb = document.createElement('div');
+        thumb.className = 'receipt-thumb';
+        var img = document.createElement('img');
+        img.src = URL.createObjectURL(file);
+        img.alt = file.name;
+        img.title = file.name;
+        var cap = document.createElement('span');
+        cap.textContent = file.name.length > 18 ? file.name.slice(0, 15) + '…' : file.name;
+        thumb.appendChild(img);
+        thumb.appendChild(cap);
+        box.appendChild(thumb);
+    });
+}
 
 function toggleCustomerBalance() {
     var box = document.getElementById('customerBalanceBox');
