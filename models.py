@@ -255,11 +255,15 @@ class Purchase(db.Model):
     purchase_number = db.Column(db.String(50), unique=True, nullable=False)
     supplier_id = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=False)
     total = db.Column(db.Float, default=0)
+    discount = db.Column(db.Float, default=0)
     payment_type = db.Column(db.String(20), default='cash')
     payment_method = db.Column(db.String(20), default='cash')
     receipt_image = db.Column(db.String(200))
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     creator = db.relationship('User', foreign_keys=[created_by])
+    modified_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    modifier = db.relationship('User', foreign_keys=[modified_by])
+    show_balance = db.Column(db.Boolean, default=False)
     paid_amount = db.Column(db.Float, default=0)
     remaining = db.Column(db.Float, default=0)
     previous_due = db.Column(db.Float, default=0)
@@ -268,6 +272,7 @@ class Purchase(db.Model):
     notes = db.Column(db.Text)
     items = db.relationship('PurchaseItem', backref='purchase', lazy=True, cascade='all, delete-orphan')
     payments = db.relationship('SupplierPayment', backref='purchase', lazy=True)
+    returns = db.relationship('SupplierReturn', backref='purchase', lazy=True)
 
 
 class PurchaseItem(db.Model):
@@ -307,7 +312,6 @@ class SupplierReturn(db.Model):
     date = db.Column(db.DateTime, default=datetime.utcnow)
     reason = db.Column(db.Text)
     items = db.relationship('SupplierReturnItem', backref='return_entry', lazy=True, cascade='all, delete-orphan')
-    purchase = db.relationship('Purchase', foreign_keys=[purchase_id], backref='supplier_returns', lazy=True)
 
 
 class SupplierReturnItem(db.Model):

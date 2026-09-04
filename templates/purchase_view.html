@@ -2,8 +2,8 @@
 {% block content %}
 
 <div class="page-header">
-    <h1 style="font-size:1.3rem;font-weight:700;color:var(--text);margin:0;"><i class="fas fa-shopping-cart" style="margin-left:8px;"></i> امر شراء #{{ purchase.purchase_number }}</h1>
-    <a href="{{ url_for('purchases_list') }}" class="btn btn-ghost"><i class="fas fa-arrow-right" style="margin-left:4px;"></i> رجوع للمشتريات</a>
+    <h1 style="font-size:1.3rem;font-weight:700;color:var(--text);">امر شراء #{{ purchase.purchase_number }}</h1>
+    <a href="{{ url_for('purchases_list') }}" class="btn btn-outline"><i class="fas fa-arrow-right"></i> رجوع للمشتريات</a>
 </div>
 
 <div class="invoice-print" id="printArea">
@@ -13,60 +13,85 @@
         </div>
         <div style="text-align:center;">
             <div class="company-name">El Dahab Trading</div>
-            <div style="font-size:0.95rem;font-weight:700;color:#fff;margin-top:2px;">امر شراء</div>
+            <div style="font-size:0.95rem;font-weight:700;color:var(--navy);margin-top:2px;">امر شراء</div>
         </div>
         <div style="text-align:left;display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
-            <div style="font-size:1.2rem;font-weight:900;color:var(--gold);">{{ purchase.purchase_number }}</div>
+            <div style="font-size:1.2rem;font-weight:900;color:var(--gold-dark);">{{ purchase.purchase_number }}</div>
             <svg id="purchaseBarcode" style="max-width:140px;height:30px;"></svg>
         </div>
     </div>
     <div class="invoice-info compact-info">
         <div><strong>المورد:</strong> {{ purchase.supplier.name }}</div>
+        <div><strong>الهاتف:</strong> {{ purchase.supplier.phone or '—' }}</div>
+        <div><strong>العنوان:</strong> {{ purchase.supplier.address or '—' }}</div>
         <div><strong>التاريخ:</strong> {{ purchase.date.strftime('%Y-%m-%d') }}</div>
     </div>
-    <div class="compact-payment-bar">
-        <span style="font-size:0.78rem;color:var(--text-secondary);">نوع الدفع:</span>
-        {% if purchase.payment_type == 'cash' %}
-        <span class="badge badge-success"><i class="fas fa-money-bill" style="margin-left:2px;"></i> نقداً</span>
-        {% elif purchase.payment_type == 'credit' %}
-        <span class="badge badge-warning" style="background:rgba(245,158,11,0.12);color:#b45309;"><i class="fas fa-clock" style="margin-left:2px;"></i> بالاجل</span>
-        <span style="font-size:0.78rem;font-weight:700;">المتبقي: {{ "{:,.0f}".format(purchase.remaining or 0) }} ج.م</span>
-        {% elif purchase.payment_type == 'installment' %}
-        <span class="badge badge-info"><i class="fas fa-calendar-check" style="margin-left:2px;"></i> تقسيط</span>
-        <span style="font-size:0.78rem;">المقدم: {{ "{:,.0f}".format(purchase.paid_amount or 0) }} ج.م | المتبقي: {{ "{:,.0f}".format(purchase.remaining or 0) }} ج.م</span>
-        {% endif %}
-        {% if purchase.payment_type in ('cash', 'installment') and PAYMENT_METHODS.get(purchase.payment_method) %}
-        <span style="font-size:0.78rem;color:var(--text-secondary);">| طريقة الدفع:</span>
-        <span class="badge badge-gold">{{ PAYMENT_METHODS.get(purchase.payment_method) }}</span>
-        {% endif %}
-        {% if purchase.receipt_image %}
-        <a href="{{ url_for('static', filename='uploads/receipts/' + purchase.receipt_image) }}" target="_blank" class="badge badge-navy" style="text-decoration:none;"><i class="fas fa-image" style="margin-left:2px;"></i> صورة الايصال</a>
-        {% endif %}
+    <div class="invoice-meta-row">
+        <div class="compact-payment-bar" style="border-bottom:none;flex:1;">
+            <span style="font-size:0.78rem;color:var(--text-secondary);">نوع الدفع:</span>
+            {% if purchase.payment_type == 'cash' %}
+            <span class="badge badge-success"><i class="fas fa-money-bill" style="margin-left:2px;"></i> نقداً</span>
+            {% elif purchase.payment_type == 'credit' %}
+            <span class="badge badge-warning" style="background:rgba(245,158,11,0.12);color:#b45309;"><i class="fas fa-clock" style="margin-left:2px;"></i> بالاجل</span>
+            <span style="font-size:0.78rem;font-weight:700;">المتبقي: {{ "{:,.0f}".format(purchase.remaining or 0) }} ج.م</span>
+            {% elif purchase.payment_type == 'installment' %}
+            <span class="badge badge-info"><i class="fas fa-calendar-check" style="margin-left:2px;"></i> تقسيط</span>
+            <span style="font-size:0.78rem;">المقدم: {{ "{:,.0f}".format(purchase.paid_amount or 0) }} ج.م | المتبقي: {{ "{:,.0f}".format(purchase.remaining or 0) }} ج.م</span>
+            {% endif %}
+            {% if purchase.payment_type in ('cash', 'installment') and PAYMENT_METHODS.get(purchase.payment_method) %}
+            <span style="font-size:0.78rem;color:var(--text-secondary);">| طريقة الدفع:</span>
+            <span class="badge badge-gold">{{ PAYMENT_METHODS.get(purchase.payment_method) }}</span>
+            {% endif %}
+            {% set pur_images = parse_images(purchase.receipt_image) %}
+            {% if pur_images %}
+            <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+                {% for fname in pur_images %}
+                <div class="receipt-thumb no-print-inline" style="position:relative;width:64px;padding:4px;border:1px solid var(--border-light);border-radius:8px;background:#fff;display:inline-flex;flex-direction:column;align-items:center;gap:2px;">
+                    <a href="{{ url_for('static', filename='uploads/receipts/' + fname) }}" target="_blank" title="عرض الصورة" style="text-decoration:none;color:var(--navy);display:flex;flex-direction:column;align-items:center;gap:3px;">
+                        <i class="fas fa-file-image" style="font-size:1.5rem;color:var(--navy);"></i>
+                        <span style="font-size:0.55rem;color:var(--text-muted);">صورة {{ loop.index }}</span>
+                    </a>
+                    <form method="POST" action="{{ url_for('purchase_image_delete', purchase_id=purchase.id, idx=loop.index0, dest='view') }}" class="no-print" onsubmit="return confirm('هل انت متأكد من حذف هذه الصورة؟');" style="margin:0;display:inline;">
+                        <button type="submit" class="btn btn-danger" style="padding:1px 6px;font-size:0.6rem;" title="حذف الصورة"><i class="fas fa-trash"></i></button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        <div class="accountant-box">
+            {% set shown_name = (purchase.modifier.full_name or purchase.modifier.username) if purchase.modifier else ((purchase.creator.full_name or purchase.creator.username) if purchase.creator else '—') %}
+            <span class="accountant-label">المحاسب</span>
+            <span class="accountant-name">{{ shown_name }}</span>
+            {% if purchase.modifier and purchase.creator and purchase.modifier.id != purchase.creator.id %}
+            <span class="accountant-moditag">(عدّل)</span>
+            {% endif %}
+        </div>
     </div>
 
     <div class="invoice-items-area">
-        <table class="compact-table">
+        <table class="compact-table invoice-items-table">
             <thead>
                 <tr>
-                    <th style="width:40px;">#</th>
+                    <th style="width:50px;">#</th>
                     <th>اسم الصنف</th>
-                    <th style="width:70px;">الكمية</th>
-                    <th style="width:50px;">الفئة</th>
-                    <th style="width:100px;">سعر الشراء</th>
-                    <th style="width:100px;">سعر البيع</th>
-                    <th style="width:110px;">الاجمالي</th>
+                    <th style="width:90px;">الكمية</th>
+                    <th style="width:60px;">الفئة</th>
+                    <th style="width:130px;">سعر الشراء</th>
+                    <th style="width:130px;">سعر البيع</th>
+                    <th style="width:140px;">الاجمالي</th>
                 </tr>
             </thead>
             <tbody>
                 {% for item in purchase.items %}
                 <tr class="{% if loop.index % 20 == 0 and not loop.last %}page-break-row{% endif %}">
-                    <td>{{ loop.index }}</td>
-                    <td style="font-weight:600;">{{ item.item_name }}</td>
-                    <td>{{ item.quantity }}</td>
-                    <td style="text-align:center;">{{ item.unit_type or 'ق' }}</td>
-                    <td>{{ "{:,.0f}".format(item.unit_price or 0) }} ج.م</td>
-                    <td>{{ "{:,.0f}".format(item.selling_price or 0) }} ج.م</td>
-                    <td style="font-weight:700;">{{ "{:,.0f}".format(item.total or 0) }} ج.م</td>
+                    <td class="item-cell">{{ loop.index }}</td>
+                    <td class="item-cell" style="font-weight:700;">{{ item.item_name }}</td>
+                    <td class="item-cell" style="text-align:center;">{{ item.quantity }}</td>
+                    <td class="item-cell" style="text-align:center;">{{ item.unit_type or 'ق' }}</td>
+                    <td class="item-cell">{{ "{:,.0f}".format(item.unit_price or 0) }}</td>
+                    <td class="item-cell">{{ "{:,.0f}".format(item.selling_price or 0) }}</td>
+                    <td class="item-cell" style="font-weight:800;">{{ "{:,.0f}".format(item.total or 0) }}</td>
                 </tr>
                 {% endfor %}
                 {% if not purchase.items %}
@@ -87,30 +112,91 @@
         </table>
     </div>
 
-    <div style="padding:0 16px 14px;">
-        <div class="grand-total compact-total">
-            <span class="total-label">الاجمالي الكلي</span>
-            <span class="total-value">{{ "{:,.0f}".format(purchase.total or 0) }} ج.م</span>
+    {% if return_items %}
+    <div style="padding:0 16px 10px;">
+        <div style="border:2px solid #dc3545;border-radius:8px;overflow:hidden;">
+            <div style="background:#dc3545;color:#fff;padding:8px 12px;font-weight:800;font-size:0.82rem;"><i class="fas fa-undo-alt" style="margin-left:4px;"></i> المرتجعات</div>
+            <table class="compact-table">
+                <thead style="background:#dc3545;">
+                    <tr>
+                        <th style="width:40px;">#</th>
+                        <th>اسم الصنف</th>
+                        <th style="width:70px;">الكمية</th>
+                        <th style="width:50px;">الفئة</th>
+                        <th style="width:100px;">سعر الوحدة</th>
+                        <th style="width:110px;">الاجمالي</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ritem in return_items %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ ritem.item_name }}</td>
+                        <td>{{ ritem.quantity }}</td>
+                        <td style="text-align:center;">{{ ritem.unit_type or 'ق' }}</td>
+                        <td>{{ "{:,.0f}".format(ritem.unit_price or 0) }}</td>
+                        <td style="color:#dc3545;font-weight:800;">{{ "{:,.0f}".format(ritem.total or 0) }} ج.م</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-        {% set pur_net = (purchase.total or 0) - (purchase.paid_amount or 0) %}
-        {% if previous_dues > 0 or balance_after > 0 %}
+    </div>
+    {% endif %}
+
+    <div style="padding:0 16px 14px;">
+        {% set pur_net = (purchase.total or 0) - (purchase.discount or 0) %}
+        {% set show_bal = purchase.show_balance and (previous_dues > 0 or balance_after > 0) %}
+        {% set shown_name = (purchase.modifier.full_name or purchase.modifier.username) if purchase.modifier else ((purchase.creator.full_name or purchase.creator.username) if purchase.creator else '—') %}
+
+        {% if purchase.notes %}
+        <div class="invoice-notes {{ 'with-bal' if show_bal }}">
+            <span class="notes-label"><i class="fas fa-sticky-note" style="margin-left:4px;"></i> الملاحظات:</span>
+            <span class="notes-text">{{ purchase.notes }}</span>
+        </div>
+        {% endif %}
+
+        {% if purchase.discount and purchase.discount > 0 %}
+        <div class="discount-bar">
+            <div><span class="d-label">الاجمالي</span><span class="d-cross">{{ "{:,.0f}".format(purchase.total or 0) }} ج.م</span></div>
+            <div style="color:#fbb;"><i class="fas fa-percentage" style="font-size:0.7rem;"></i><span style="font-weight:700;"> {{ "{:,.0f}".format(purchase.discount) }} ج.م</span></div>
+            <div><span class="d-label">الصافي</span><span class="d-net">{{ "{:,.0f}".format(pur_net) }} ج.م</span></div>
+        </div>
+        {% endif %}
+
         <div class="totals-row">
-            <div class="grand-total compact-total" style="padding:6px 10px;background:var(--bg);">
-                <span class="total-label"><i class="fas fa-clock-rotate-left" style="margin-left:4px;"></i> المستحق السابق</span>
+            {% if show_bal %}
+            <div class="grand-total compact-total total-box total-dues">
+                <span class="total-label"><i class="fas fa-clock-rotate-left" style="margin-left:4px;"></i> آخر المستحقات</span>
                 <span class="total-value">{{ "{:,.0f}".format(previous_dues) }} ج.م</span>
             </div>
-            <div class="grand-total compact-total" style="padding:6px 10px;background:var(--bg);">
-                <span class="total-label">قيمة الفاتورة</span>
+            <div class="grand-total compact-total total-box total-invoice">
+                <span class="total-label">إجمالي الفاتورة</span>
                 <span class="total-value">{{ "{:,.0f}".format(pur_net) }} ج.م</span>
             </div>
-            <div class="grand-total compact-total" style="padding:6px 10px;background:var(--bg);">
-                <span class="total-label">المدفوع (كاش/مقدم)</span>
+            <div class="grand-total compact-total total-box total-invoice total-paid">
+                <span class="total-label">مقدم الدفع</span>
                 <span class="total-value">{{ "{:,.0f}".format(purchase.paid_amount or 0) }} ج.م</span>
             </div>
-            <div class="grand-total compact-total" style="padding:6px 10px;background:rgba(59,130,246,0.08);">
-                <span class="total-label"><i class="fas fa-exclamation-triangle" style="margin-left:4px;"></i> المستحق بعد الفاتورة</span>
+            <div class="grand-total compact-total total-box total-grand">
+                <span class="total-label"><i class="fas fa-exclamation-triangle" style="margin-left:4px;"></i> إجمالي المستحقات</span>
                 <span class="total-value">{{ "{:,.0f}".format(balance_after) }} ج.م</span>
             </div>
+            {% else %}
+            <div class="grand-total compact-total total-box total-invoice">
+                <span class="total-label">الاجمالي الكلي</span>
+                <span class="total-value">{{ "{:,.0f}".format(pur_net) }} ج.م</span>
+            </div>
+            {% endif %}
+        </div>
+        {% if return_amount > 0 %}
+        <div class="grand-total compact-total" style="background:linear-gradient(135deg,#ffe4e6,#fecdd3);margin-top:6px;">
+            <span class="total-label">اجمالي المرتجعات</span>
+            <span class="total-value">{{ "{:,.0f}".format(return_amount or 0) }} ج.م</span>
+        </div>
+        <div class="grand-total compact-total" style="background:linear-gradient(135deg,#eef2f7,#e5eaf2);margin-top:6px;">
+            <span class="total-label">الصافي النهائي</span>
+            <span class="total-value">{{ "{:,.0f}".format((purchase.total or 0) - (purchase.discount or 0) - return_amount or 0) }} ج.م</span>
         </div>
         {% endif %}
     </div>
@@ -145,45 +231,48 @@
     </div>
     {% endif %}
 
-    {% if purchase_payments %}
+    {% if supplier_payments %}
     <div style="padding:0 16px 14px;">
         <div style="border:2px solid rgba(16,185,129,0.35);border-radius:8px;overflow:hidden;">
-            <div style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:8px 12px;font-weight:800;font-size:0.82rem;"><i class="fas fa-money-bill-wave" style="margin-left:4px;"></i> دفعات تم سدادها على هذا الأمر</div>
+            <div style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:8px 12px;font-weight:800;font-size:0.82rem;"><i class="fas fa-money-bill-wave" style="margin-left:4px;"></i> سجل دفعات المورد (الحساب التراكمي)</div>
             <table class="compact-table">
                 <thead>
                     <tr>
+                        <th>#</th>
                         <th>التاريخ</th>
                         <th>المبلغ</th>
                         <th>طريقة الدفع</th>
-                        <th>الموظف</th>
                         <th>ملاحظات</th>
                     </tr>
                 </thead>
                 <tbody>
-                {% for p in purchase_payments|sort(attribute='date') %}
+                {% for p in supplier_payments %}
                     <tr>
+                        <td>{{ loop.index }}</td>
                         <td>{{ p.date.strftime('%Y-%m-%d') }}</td>
                         <td style="font-weight:700;color:#059669;">{{ "{:,.0f}".format(p.amount or 0) }} ج.م</td>
                         <td>{{ PAYMENT_METHODS.get(p.payment_method) or 'كاش' }}</td>
-                        <td>{{ (p.creator.full_name or p.creator.username) if p.creator else '—' }}</td>
                         <td>{{ p.notes or '—' }}</td>
                     </tr>
                 {% endfor %}
                 </tbody>
                 <tfoot>
                     <tr>
-                        <td colspan="2" style="font-weight:800;color:#059669;">اجمالي مدفوعات هذا الأمر: {{ "{:,.0f}".format(purchase_payments|sum(attribute='amount')) }} ج.م</td>
-                        <td colspan="3"></td>
+                        <td colspan="5" style="border-top:2px solid #e5e7eb;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;">
+                                <div style="font-weight:800;font-size:0.85rem;color:#059669;">
+                                    <i class="fas fa-receipt" style="margin-left:4px;"></i> اجمالي الدفعات: {{ "{:,.0f}".format(supp_total_paid) }} ج.م
+                                </div>
+                                <div style="font-weight:800;font-size:0.85rem;color:#dc2626;">
+                                    المتبقي من حساب المورد: {{ "{:,.0f}".format(supp_balance) }} ج.م
+                                    <i class="fas fa-exclamation-circle" style="margin-right:4px;"></i>
+                                </div>
+                            </div>
+                        </td>
                     </tr>
                 </tfoot>
             </table>
         </div>
-    </div>
-    {% endif %}
-
-    {% if purchase.creator %}
-    <div style="text-align:left;padding:0 16px 8px;font-size:0.62rem;color:var(--text-muted);direction:ltr;">
-        {{ purchase.creator.full_name or purchase.creator.username }}
     </div>
     {% endif %}
 </div>
@@ -192,12 +281,20 @@
     <button class="btn btn-gold btn-lg" onclick="window.print();"><i class="fas fa-print"></i> طباعة</button>
     <a href="{{ url_for('purchase_edit', purchase_id=purchase.id) }}" class="btn btn-outline btn-lg"><i class="fas fa-edit"></i> تعديل</a>
     <a href="{{ url_for('purchases_list') }}" class="btn btn-outline btn-lg"><i class="fas fa-arrow-right"></i> رجوع</a>
-    <form method="POST" action="{{ url_for('purchase_delete', purchase_id=purchase.id) }}" style="display:inline;" onsubmit="return confirm('هل انت متاكد من الحذف؟');">
+    <form method="POST" action="{{ url_for('purchase_delete', purchase_id=purchase.id) }}" style="display:inline;" onsubmit="return confirm('هل انت متاكد من حذف امر الشراء؟');">
         <button type="submit" class="btn btn-danger btn-lg"><i class="fas fa-trash"></i> حذف</button>
     </form>
 </div>
 
 <style>
+.invoice-print { background: #fff; border: 1px solid #dde3ec; }
+.invoice-print .compact-header {
+    background: linear-gradient(135deg, #f8fafc, #eef2f8);
+    border-bottom: 2px solid var(--gold);
+    color: var(--text);
+}
+.invoice-print .compact-header .company-name { color: #1a365b; }
+.invoice-meta-row { border-bottom: 1px solid #e6eaf2; }
 .compact-header { padding: 14px 16px; }
 .compact-logo { width: 36px; height: 36px; border-radius: 8px; }
 .compact-info {
@@ -207,6 +304,7 @@
     padding: 8px 16px;
     background: var(--bg);
     border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
 }
 .compact-info div { font-size: 0.78rem !important; padding: 2px 0; }
 .compact-info strong { color: var(--text); }
@@ -220,29 +318,116 @@
 }
 .compact-table { width: 100%; border-collapse: collapse; }
 .compact-table thead th {
-    background: var(--navy);
-    color: #fff;
-    padding: 7px 10px;
-    font-size: 0.72rem;
-    font-weight: 600;
+    background: #eef2f7;
+    color: #1a365b;
+    padding: 9px 12px;
+    font-size: 0.8rem;
+    font-weight: 700;
     text-align: right;
     white-space: nowrap;
+    border: 1px solid #d3dce8;
 }
 .compact-table tbody td {
-    padding: 6px 10px;
-    border-bottom: 1px solid var(--border-light);
-    font-size: 0.78rem;
+    padding: 10px 12px;
+    border: 1px solid #c9d4e2;
+    font-size: 0.92rem;
+    line-height: 1.5;
 }
-.compact-table tbody tr:hover { background: rgba(207,163,64,0.03); }
-.compact-total { padding: 10px 16px; }
-.compact-total .total-label { font-size: 0.88rem; }
-.compact-total .total-value { font-size: 1.15rem; }
+.compact-table tbody tr { border-bottom: 1px solid #b6c2d2; }
+.compact-table tbody tr:nth-child(even) { background: #f7f9fc; }
+.compact-table tbody tr:hover { background: rgba(207,163,64,0.06); }
+
+.invoice-items-table .item-cell {
+    font-size: 0.95rem;
+    padding: 9px 12px;
+}
+
+.invoice-meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+    padding: 0 16px;
+}
+.accountant-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--gold-glow);
+    border: 1px solid rgba(207,163,64,0.4);
+    border-radius: 8px;
+    padding: 6px 12px;
+    white-space: nowrap;
+}
+.accountant-label { font-size: 0.75rem; color: var(--text-secondary); }
+.accountant-name { font-size: 0.95rem; font-weight: 800; color: var(--navy); }
+.accountant-moditag {
+    font-size: 0.68rem; font-weight: 700; color: #fff;
+    background: var(--danger); border-radius: 6px; padding: 2px 7px;
+}
+
+.invoice-notes {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-right: 4px solid var(--gold);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 10px;
+}
+.invoice-notes .notes-label {
+    font-size: 0.8rem; font-weight: 800; color: #7a5d1e; white-space: nowrap;
+}
+.invoice-notes .notes-text {
+    font-size: 0.92rem; color: #57451a; line-height: 1.7; flex: 1;
+}
+
+.totals-row {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+    flex-wrap: wrap;
+}
+.total-box { flex: 1; min-width: 180px; margin-top: 6px; }
+.total-dues { background: linear-gradient(135deg, #e5e7eb, #d1d5db); }
+.total-invoice { background: linear-gradient(135deg, #e0e7ff, #c7d2fe); }
+.total-paid { background: linear-gradient(135deg, #d1fae5, #a7f3d0); }
+.total-grand { background: linear-gradient(135deg, #ffe4e6, #fecdd3); }
+.compact-total .total-label { color: #374151 !important; font-weight: 800; }
+.compact-total .total-value { color: #111827 !important; }
+
+.discount-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(135deg, #eef2f7, #e5eaf2);
+    border: 1px solid #d3dce8;
+    border-radius: 8px;
+    padding: 10px 16px;
+    color: #1f2937;
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+}
+.discount-bar .d-label { color: #4b5563; }
+.discount-bar .d-cross { font-weight: 700; text-decoration: line-through; color: #9ca3af; margin-right: 6px; }
+.discount-bar .d-net { font-size: 1rem; font-weight: 900; color: #1a365b; margin-right: 6px; }
+
+.compact-total { padding: 12px 16px; }
+.compact-total .total-label { font-size: 0.88rem; color: #fff; }
+.compact-total .total-value { font-size: 1.25rem; }
+
 .invoice-items-area { border-bottom: 1px solid var(--border); }
-.invoice-page-footer td {
-    padding: 0 !important;
-    border-bottom: 2px solid var(--navy) !important;
-    border-top: 1px solid var(--border) !important;
-}
+
+    .invoice-page-footer td {
+        border-bottom: 2px solid #000 !important;
+        border-top: 1px solid #000 !important;
+    }
+    .page-footer-inner {
+        font-size: 0.6rem !important;
+    }
 .page-footer-inner {
     display: flex;
     justify-content: space-between;
@@ -252,7 +437,10 @@
     color: var(--text-muted);
     background: var(--bg);
 }
-.page-break-row { border-bottom: 2px solid var(--navy) !important; }
+
+.page-break-row {
+    border-bottom: 2px solid var(--navy) !important;
+}
 
 #purchaseBarcode { max-width: 140px; height: 30px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
@@ -273,6 +461,10 @@
     }
 
     .compact-header {
+        flex-direction: row !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        gap: 12px !important;
         padding: 8px 12px !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
@@ -295,27 +487,50 @@
     .compact-payment-bar { padding: 4px 12px; font-size: 0.72rem; }
 
     .compact-table thead th {
-        padding: 5px 8px !important;
-        font-size: 0.68rem !important;
+        padding: 6px 8px !important;
+        font-size: 0.75rem !important;
+        border: 1px solid #0f2540 !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
     .compact-table tbody td {
-        padding: 4px 8px !important;
-        font-size: 0.72rem !important;
+        padding: 6px 8px !important;
+        font-size: 0.85rem !important;
+        border: 1px solid #aeb9c8 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
     }
+    .invoice-items-table .item-cell { font-size: 0.88rem !important; }
 
     .compact-total { padding: 8px 12px !important; }
-    .compact-total .total-label { font-size: 0.8rem !important; }
-    .compact-total .total-value { font-size: 0.95rem !important; }
+    .compact-total .total-label { font-size: 0.82rem !important; color: #fff !important; }
+    .compact-total .total-value { font-size: 1.1rem !important; }
+    .totals-row { gap: 6px !important; }
+    .total-box { min-width: 30% !important; margin-top: 4px !important; }
+    .compact-payment-bar { border-bottom: none !important; }
+
+    .invoice-meta-row { border-bottom: 1px solid #000 !important; padding: 0 12px !important; }
+    .accountant-box { background: none !important; border: 1px solid #000 !important; padding: 4px 8px !important; }
+    .accountant-label { font-size: 0.7rem !important; }
+    .accountant-name { font-size: 0.85rem !important; color: #000 !important; }
+    .accountant-moditag { background: #000 !important; }
+
+    .invoice-notes {
+        border: 1px solid #000 !important; background: none !important;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .invoice-notes .notes-label { color: #000 !important; }
+    .invoice-notes .notes-text { color: #000 !important; }
+    .discount-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .total-dues, .total-invoice, .total-grand { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
     .page-break-row td { border-bottom: 2px solid #000 !important; }
-    .invoice-page-footer td {
-        border-bottom: 2px solid #000 !important;
-        border-top: 1px solid #000 !important;
-    }
+
+    .invoice-page-footer td { border-bottom: 2px solid #000 !important; }
     .page-footer-inner {
         font-size: 0.6rem !important;
+        border-top: 1px solid #000 !important;
+        border-bottom: none !important;
     }
 
     .badge {

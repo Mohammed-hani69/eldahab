@@ -184,6 +184,7 @@ PAGE_MAP = {
     'purchase_view': 'purchases',
     'purchase_edit': 'purchases',
     'purchase_delete': 'purchases',
+    'purchase_image_delete': 'purchases',
     'items_list': 'items_list',
     'items_edit': 'items_list',
     'shipping_list': 'shipping',
@@ -252,6 +253,13 @@ with app.app_context():
         purchase_item_cols = {c['name'] for c in inspector.get_columns('purchase_items')}
         if 'unit_type' not in purchase_item_cols:
             db.session.execute(db.text("ALTER TABLE purchase_items ADD COLUMN unit_type VARCHAR(10) DEFAULT 'ق'"))
+
+        if 'discount' not in purchase_cols:
+            db.session.execute(db.text("ALTER TABLE purchases ADD COLUMN discount FLOAT DEFAULT 0"))
+        if 'show_balance' not in purchase_cols:
+            db.session.execute(db.text("ALTER TABLE purchases ADD COLUMN show_balance BOOLEAN DEFAULT 0"))
+        if 'modified_by' not in purchase_cols:
+            db.session.execute(db.text("ALTER TABLE purchases ADD COLUMN modified_by INTEGER"))
 
         return_item_cols = {c['name'] for c in inspector.get_columns('return_items')}
         if 'unit_type' not in return_item_cols:
@@ -2256,13 +2264,13 @@ def purchase_add():
             flash('لا يمكن حفظ امر الشراء: يوجد منتج بدون سعر (' + '، '.join(no_price_items) + ')', 'danger')
             return render_template('purchase_form.html', suppliers=suppliers,
                 no_price=no_price_items, PAYMENT_TYPES=PAYMENT_TYPES)
-
         p = Purchase(
             purchase_number=generate_purchase_number(),
             supplier_id=int(request.form['supplier_id']),
             payment_type=payment_type,
+            show_balance=bool(request.form.get('show_balance')),
             payment_method=request.form.get('payment_method', 'cash') if payment_type in ('cash', 'installment') else 'cash',
-            receipt_image=save_receipt_image(request.files.get('receipt_image')),
+            receipt_image=save_receipt_images(request.files.getlist('receipt_images')),
             created_by=session.get('user_id'),
             notes=request.form.get('notes', '')
         )
@@ -2302,6 +2310,12 @@ def purchase_add():
             db.session.add(item)
             total += item_total
         p.total = total
+        try:
+            discount = float(request.form.get('discount', 0) or 0)
+        except (TypeError, ValueError):
+            discount = 0
+        p.discount = discount
+        net = max(0, total - discount)
 
         # حساب اللقطة التراكمية الثابتة (مثل فاتورة المبيعات):
         # previous_due = مستحق (balance_after) آخر أمر شراء سابق للمورد
@@ -2316,20 +2330,20 @@ def purchase_add():
         p.previous_due = prev_due
 
         if payment_type == 'cash':
-            p.paid_amount = total
+            p.paid_amount = net
             p.remaining = 0
-            p.balance_after = max(0, prev_due + total - total)
+            p.balance_after = max(0, prev_due + net - net)
         elif payment_type == 'credit':
             # الآجل: يمكن دفع مقدم نقدي عن المورد
-            down = min(float(request.form.get('down_payment', 0) or 0), total)
+            down = min(float(request.form.get('down_payment', 0) or 0), net)
             p.paid_amount = down
-            p.remaining = max(0, total - down)
-            p.balance_after = max(0, prev_due + total - down)
+            p.remaining = max(0, net - down)
+            p.balance_after = max(0, prev_due + net - down)
         elif payment_type == 'installment':
-            down = float(request.form.get('down_payment', 0) or 0)
+            down = min(float(request.form.get('down_payment', 0) or 0), net)
             p.paid_amount = down
-            p.remaining = total - down
-            p.balance_after = max(0, prev_due + total - down)
+            p.remaining = max(0, net - down)
+            p.balance_after = max(0, prev_due + net - down)
 
             count = int(request.form.get('installment_count', 1) or 1)
             start_str = request.form.get('installment_start_date', '')
@@ -2338,14 +2352,14 @@ def purchase_add():
             else:
                 start_date = date.today()
 
-            remaining_amount = total - down
+            remaining_amount = max(0, net - down)
             inst_amount = round(remaining_amount / count, 2) if count > 0 else remaining_amount
 
             plan = SupplierInstallmentPlan(
                 supplier_id=p.supplier_id,
                 purchase_id=p.id,
                 plan_number=generate_supplier_plan_number(),
-                total_amount=total,
+                total_amount=net,
                 down_payment=down,
                 installment_count=count,
                 installment_amount=inst_amount,
@@ -2386,9 +2400,19 @@ def purchase_add():
 @login_required
 def purchase_view(purchase_id):
     p = Purchase.query.get_or_404(purchase_id)
+    return_items = []
+    for r in p.returns:
+        return_items.extend(r.items)
+    return_amount = sum(r.total_amount for r in p.returns)
     installment_plan = SupplierInstallmentPlan.query.filter_by(purchase_id=p.id).first()
     installments = installment_plan.installments if installment_plan else []
     installment_payments = installment_plan.payments if installment_plan else []
+    sup = p.supplier
+    # سجل دفعات المورد الكامل (حساب تراكمي) لعرضه أسفل الفاتورة
+    supplier_payments = SupplierPayment.query.filter(
+        SupplierPayment.supplier_id == sup.id).order_by(SupplierPayment.date).all()
+    supp_total_paid = sup.total_paid()
+    supp_balance = sup.balance()
 
     # اللقطة التراكمية الثابتة (مثل فاتورة المبيعات)
     prev_saved = p.previous_due if p.previous_due is not None else 0
@@ -2411,10 +2435,14 @@ def purchase_view(purchase_id):
             after_saved = max(0, round(sup_total + this_net, 2))
 
     return render_template('purchase_view.html', purchase=p,
+        return_items=return_items, return_amount=return_amount,
         supplier_installment_plan=installment_plan, installments=installments,
         installment_payments=installment_payments, PAYMENT_TYPES=PAYMENT_TYPES,
         previous_dues=max(0, prev_saved), balance_after=max(0, after_saved),
-        purchase_payments=p.payments)
+        purchase_payments=p.payments,
+        supplier_payments=supplier_payments,
+        supp_total_paid=round(supp_total_paid, 2),
+        supp_balance=round(supp_balance, 2))
 
 
 @app.route('/purchases/<int:purchase_id>/edit', methods=['GET', 'POST'])
@@ -2424,18 +2452,43 @@ def purchase_edit(purchase_id):
     suppliers = Supplier.query.order_by(Supplier.name).all()
 
     if request.method == 'POST':
+        p.modified_by = session.get('user_id')
         p.supplier_id = int(request.form['supplier_id'])
         payment_type = request.form.get('payment_type', 'cash')
         p.payment_type = payment_type
+        p.show_balance = bool(request.form.get('show_balance'))
         if payment_type in ('cash', 'installment'):
             p.payment_method = request.form.get('payment_method', 'cash')
         else:
             p.payment_method = 'cash'
-        new_receipt = save_receipt_image(request.files.get('receipt_image'))
-        if new_receipt:
-            delete_receipt_image(p.receipt_image)
-            p.receipt_image = new_receipt
+        new_images = save_receipt_images(request.files.getlist('receipt_images'))
+        if new_images != '[]':
+            existing = parse_images(p.receipt_image)
+            p.receipt_image = json.dumps(existing + parse_images(new_images))
         p.notes = request.form.get('notes', '')
+
+        # التحقق: لا يُسمح بصنف له كمية بدون سعر
+        no_price_items = []
+        indices_ = sorted({int(k.rsplit('_', 1)[1]) for k in request.form if k.startswith('item_name_')})
+        for i in indices_:
+            iname = request.form.get(f'item_name_{i}', '').strip()
+            if not iname:
+                continue
+            try:
+                qty = float(request.form.get(f'item_qty_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                qty = 0
+            try:
+                price = float(request.form.get(f'item_price_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                price = 0
+            if qty > 0 and price <= 0:
+                no_price_items.append(iname)
+        if no_price_items:
+            flash('لا يمكن حفظ امر الشراء: يوجد منتج بدون سعر (' + '، '.join(no_price_items) + ')', 'danger')
+            return render_template('purchase_form.html', suppliers=suppliers, purchase=p,
+                no_price=no_price_items, PAYMENT_TYPES=PAYMENT_TYPES,
+                installment_plan=SupplierInstallmentPlan.query.filter_by(purchase_id=p.id).first())
 
         PurchaseItem.query.filter_by(purchase_id=p.id).delete()
 
@@ -2473,31 +2526,46 @@ def purchase_edit(purchase_id):
             db.session.add(item)
             total += item_total
         p.total = total
+        try:
+            discount = float(request.form.get('discount', 0) or 0)
+        except (TypeError, ValueError):
+            discount = 0
+        p.discount = discount
+        net = max(0, total - discount)
 
         plan_existing = SupplierInstallmentPlan.query.filter_by(purchase_id=p.id).first()
 
         if payment_type == 'cash':
-            p.paid_amount = total
+            p.paid_amount = net
             p.remaining = 0
         elif payment_type == 'credit':
             # الآجل: السماح بتعديل المقدم النقدي للمورد
-            want_down = min(float(request.form.get('down_payment', 0) or 0), total)
+            want_down = min(float(request.form.get('down_payment', 0) or 0), net)
             p.paid_amount = want_down
-            p.remaining = max(0, total - want_down)
+            p.remaining = max(0, net - want_down)
         elif payment_type == 'installment':
-            down = min(float(request.form.get('down_payment', 0) or 0), total)
+            down = min(float(request.form.get('down_payment', 0) or 0), net)
             p.paid_amount = down
-            p.remaining = max(0, total - down)
+            p.remaining = max(0, net - down)
 
             count = int(request.form.get('installment_count', 1) or 1)
             start_str = request.form.get('installment_start_date', '')
             start_date = datetime.strptime(start_str, '%Y-%m-%d').date() if start_str else date.today()
+
+            remaining_amount = max(0, net - down)
+            inst_amount = round(remaining_amount / count, 2) if count > 0 else remaining_amount
 
             if not plan_existing:
                 plan_existing = SupplierInstallmentPlan(
                     supplier_id=p.supplier_id,
                     purchase_id=p.id,
                     plan_number=generate_supplier_plan_number(),
+                    total_amount=net,
+                    down_payment=down,
+                    installment_count=count,
+                    installment_amount=inst_amount,
+                    remaining=remaining_amount,
+                    start_date=start_date,
                     status='active',
                     notes=p.notes
                 )
@@ -2506,10 +2574,7 @@ def purchase_edit(purchase_id):
 
             SupplierInstallment.query.filter_by(plan_id=plan_existing.id).delete()
 
-            remaining_amount = max(0, total - down)
-            inst_amount = round(remaining_amount / count, 2) if count > 0 else remaining_amount
-
-            plan_existing.total_amount = total
+            plan_existing.total_amount = net
             plan_existing.down_payment = down
             plan_existing.installment_count = count
             plan_existing.installment_amount = inst_amount
@@ -2536,7 +2601,7 @@ def purchase_edit(purchase_id):
             ).order_by(Purchase.id.desc()).first()
             cur_prev = (prev_pur_edit.balance_after if prev_pur_edit and prev_pur_edit.balance_after else 0) or 0
         p.previous_due = max(0, cur_prev)
-        p.balance_after = max(0, round((p.previous_due or 0) + total - (p.paid_amount or 0), 2))
+        p.balance_after = max(0, round((p.previous_due or 0) + net - (p.paid_amount or 0), 2))
 
         # التحويل من تقسيط الي نقدي/آجل: حذف خطة التقسيط ان وجدت
         if payment_type != 'installment':
@@ -2567,10 +2632,33 @@ def purchase_delete(purchase_id):
         SupplierInstallment.query.filter_by(plan_id=plan.id).delete()
         db.session.delete(plan)
     PurchaseItem.query.filter_by(purchase_id=p.id).delete()
+    SupplierReturnItem.query.filter(SupplierReturnItem.return_id.in_(
+        db.session.query(SupplierReturn.id).filter_by(purchase_id=p.id)
+    )).delete(synchronize_session='fetch')
+    SupplierReturn.query.filter_by(purchase_id=p.id).delete()
+    SupplierPayment.query.filter_by(purchase_id=p.id).update({'purchase_id': None})
     db.session.delete(p)
     db.session.commit()
     flash('تم حذف امر الشراء بنجاح', 'success')
     return redirect(url_for('purchases_list'))
+
+
+@app.route('/purchases/<int:purchase_id>/image/<int:idx>/delete', methods=['POST'])
+@login_required
+def purchase_image_delete(purchase_id, idx):
+    p = Purchase.query.get_or_404(purchase_id)
+    images = parse_images(p.receipt_image)
+    if 0 <= idx < len(images):
+        delete_receipt_image(images[idx])
+        images.pop(idx)
+    p.receipt_image = json.dumps(images) if images else ''
+    db.session.commit()
+    flash('تم حذف الصورة بنجاح', 'success')
+    # الرجوع لنفس الصفحة المصدر (عرض امر الشراء او نموذج التعديل)
+    dest = request.args.get('dest', 'view')
+    if dest == 'edit':
+        return redirect(url_for('purchase_edit', purchase_id=purchase_id))
+    return redirect(url_for('purchase_view', purchase_id=purchase_id))
 
 
 @app.route('/payments/<int:payment_id>/receipt')
@@ -2878,6 +2966,28 @@ def api_customer_balance():
                 'remaining': fixed_due
             })
     return jsonify({'total_remaining': round(max(0, c.balance()), 2), 'invoices': result})
+
+
+@app.route('/api/supplier-balance')
+@login_required
+def api_supplier_balance():
+    supplier_id = request.args.get('supplier_id', type=int)
+    if not supplier_id:
+        return jsonify({'total_remaining': 0, 'purchases': []})
+    s = Supplier.query.get(supplier_id)
+    if not s:
+        return jsonify({'total_remaining': 0, 'purchases': []})
+    result = []
+    for pur in Purchase.query.filter_by(supplier_id=s.id).order_by(Purchase.id).all():
+        fixed_due = max(0, pur.balance_after or 0)
+        if fixed_due > 0:
+            result.append({
+                'purchase_number': pur.purchase_number,
+                'total': max(0, (pur.total or 0) - (pur.discount or 0)),
+                'paid': pur.paid_amount or 0,
+                'remaining': fixed_due
+            })
+    return jsonify({'total_remaining': round(max(0, s.balance()), 2), 'purchases': result})
 
 
 @app.route('/api/dashboard-data')

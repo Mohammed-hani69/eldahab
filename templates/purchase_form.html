@@ -7,6 +7,30 @@
 
 <div id="lockBanner" style="display:none;padding:14px 18px;border-radius:var(--radius-sm);margin-bottom:16px;font-weight:600;font-size:0.88rem;"></div>
 
+<div id="inlineToast" style="display:none;align-items:flex-start;gap:10px;margin-bottom:16px;padding:14px 18px;border-radius:var(--radius-sm);background:linear-gradient(135deg,#fff5f5,#fed7d7);border:1.5px solid #fca5a5;color:#c53030;font-weight:600;font-size:0.88rem;">
+    <i class="fas fa-exclamation-triangle" style="margin-top:2px;color:#dc2626;"></i>
+    <div style="flex:1;">
+        <strong>لا يمكن حفظ امر الشراء:</strong> يوجد صنف له كمية بدون سعر.
+        <div style="font-size:0.8rem;margin-top:4px;font-weight:500;color:#9b2c2c;">يرجى وضع السعر في الحقل المظلل بالأحمر ثم اضغط حفظ من جديد.</div>
+    </div>
+    <button type="button" onclick="this.parentElement.style.display='none'" style="background:none;border:none;color:#c53030;cursor:pointer;font-size:1rem;line-height:1;"><i class="fas fa-times"></i></button>
+</div>
+
+{% if no_price %}
+<div class="alert alert-danger" style="display:flex;align-items:center;gap:10px;margin-bottom:16px;border:1px solid #fca5a5;">
+    <i class="fas fa-exclamation-triangle" style="color:#dc2626;"></i>
+    <div>
+        <strong>لا يمكن حفظ امر الشراء:</strong> يوجد منتج بدون سعر — اكتب سعر الشراء لكل صنف.
+        <div style="font-size:0.82rem;margin-top:4px;">
+            الاصناف الناقص سعرها:
+            {% for n in no_price %}
+            <span class="badge badge-danger" style="margin-left:4px;">{{ n }}</span>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <form method="POST" id="purchaseForm" enctype="multipart/form-data" {% if purchase %}action="{{ url_for('purchase_edit', purchase_id=purchase.id) }}"{% endif %}>
     <div class="two-col">
 
@@ -44,13 +68,26 @@
                         </div>
                         <div class="form-group" id="downPaymentGroup" style="display:none;">
                             <label><i class="fas fa-hand-holding-usd" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> مبلغ المقدم</label>
-                            <input type="number" name="down_payment" class="form-control" min="0" step="any" placeholder="0" value="{% if purchase and purchase.payment_type == 'installment' %}{{ purchase.paid_amount or 0 }}{% else %}0{% endif %}">
+                            <input type="number" name="down_payment" class="form-control" min="0" step="any" placeholder="0" value="{% if purchase and purchase.payment_type in ['installment', 'credit'] %}{{ purchase.paid_amount or 0 }}{% else %}0{% endif %}">
                         </div>
                         <div class="form-group">
-                            <label><i class="fas fa-camera" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> صورة الايصال</label>
-                            <input type="file" name="receipt_image" class="form-control" accept="image/png,image/jpeg,image/webp,image/gif">
-                            {% if purchase and purchase.receipt_image %}
-                            <a href="{{ url_for('static', filename='uploads/receipts/' + purchase.receipt_image) }}" target="_blank" style="font-size:0.75rem;color:var(--navy);"><i class="fas fa-image"></i> عرض الايصال الحالي</a>
+                            <label><i class="fas fa-camera" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> صور الايصال (يمكن اختيار اكثر من صورة)</label>
+                            <input type="file" name="receipt_images" id="receiptImagesInput" class="form-control" accept="image/png,image/jpeg,image/webp,image/gif" multiple onchange="previewReceiptImages(this)">
+                            <div id="receiptPreview" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;direction:rtl;"></div>
+                            {% if purchase and purchase.receipt_image and parse_images(purchase.receipt_image) %}
+                            <div style="margin-top:8px;" id="existingReceipts">
+                                <label style="font-size:0.75rem;color:var(--navy);display:block;margin-bottom:4px;"><i class="fas fa-images"></i> الصور الحالية لأمر الشراء:</label>
+                                <div style="display:flex;flex-wrap:wrap;gap:10px;">
+                                {% for fname in parse_images(purchase.receipt_image) %}
+                                    <div class="receipt-thumb">
+                                        <a href="{{ url_for('static', filename='uploads/receipts/' + fname) }}" target="_blank"><i class="fas fa-file-image" style="font-size:1.6rem;color:var(--navy);"></i></a>
+                                        <form method="POST" action="{{ url_for('purchase_image_delete', purchase_id=purchase.id, idx=loop.index0, dest='edit') }}" class="no-print" onsubmit="return confirm('هل انت متأكد من حذف هذه الصورة؟');" style="margin:0;display:inline;">
+                                            <button type="submit" class="btn btn-danger" style="padding:1px 6px;font-size:0.62rem;" title="حذف الصورة"><i class="fas fa-trash"></i></button>
+                                        </form>
+                                    </div>
+                                {% endfor %}
+                                </div>
+                            </div>
                             {% endif %}
                         </div>
                     </div>
@@ -62,6 +99,36 @@
                         <div class="form-group">
                             <label><i class="fas fa-calendar-alt" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> تاريخ اول قسط</label>
                             <input type="date" name="installment_start_date" class="form-control" {% if installment_plan and installment_plan.start_date %}value="{{ installment_plan.start_date.strftime('%Y-%m-%d') }}"{% endif %}>
+                        </div>
+                    </div>
+                    <div class="form-row" style="margin-bottom:0;">
+                        <div class="form-group" style="display:flex;align-items:center;gap:12px;flex-basis:100%;">
+                            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;white-space:nowrap;">
+                                <input type="checkbox" id="showBalanceCheck" name="show_balance" onchange="toggleSupplierBalance()" {% if purchase and purchase.show_balance %}checked{% endif %} style="width:18px;height:18px;accent-color:var(--gold);cursor:pointer;">
+                                <i class="fas fa-wallet" style="color:var(--gold);font-size:0.85rem;"></i>
+                                عرض مبالغ المورد المستحقة
+                            </label>
+                        </div>
+                    </div>
+                    <div id="supplierBalanceBox" style="display:none;margin-top:10px;padding:12px 16px;background:linear-gradient(135deg,#fef9ee,#fff8e6);border:1px solid rgba(207,163,64,0.25);border-radius:var(--radius-sm);direction:rtl;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                            <i class="fas fa-receipt" style="color:var(--navy);font-size:0.9rem;"></i>
+                            <span style="font-weight:700;color:var(--navy);font-size:0.88rem;">اجمالي المستحقات</span>
+                        </div>
+                        <div id="balanceTotal" style="font-size:1.4rem;font-weight:800;color:#dc3545;margin-bottom:10px;"></div>
+                        <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+                            <thead>
+                                <tr style="border-bottom:2px solid var(--gold);">
+                                    <th style="padding:6px 8px;text-align:right;color:var(--navy);">امر الشراء</th>
+                                    <th style="padding:6px 8px;text-align:right;color:var(--navy);">الاجمالي</th>
+                                    <th style="padding:6px 8px;text-align:right;color:var(--navy);">المدفوع</th>
+                                    <th style="padding:6px 8px;text-align:right;color:#dc3545;font-weight:700;">المتبقي</th>
+                                </tr>
+                            </thead>
+                            <tbody id="balanceDetails"></tbody>
+                        </table>
+                        <div id="balanceEmpty" style="display:none;text-align:center;padding:12px;color:#999;font-size:0.85rem;">
+                            <i class="fas fa-check-circle" style="color:#28a745;margin-left:4px;"></i> لا توجد مستحقات على هذا المورد
                         </div>
                     </div>
                 </div>
@@ -94,7 +161,7 @@
                             </div>
                             <input type="number" name="item_qty_{{ loop.index0 }}" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)" value="{{ item.quantity }}">
                             <input type="text" name="item_unit_{{ loop.index0 }}" class="unit-type-input item-unit" value="{{ item.unit_type or 'ق' }}" readonly>
-                            <input type="number" name="item_price_{{ loop.index0 }}" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this)" value="{{ item.unit_price }}">
+                            <input type="number" name="item_price_{{ loop.index0 }}" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this); clearRowError(this)" value="{{ item.unit_price }}">
                             <input type="number" name="item_sell_price_{{ loop.index0 }}" class="form-control item-sell-price" min="0" step="any" placeholder="0" value="{{ item.selling_price }}">
                             <span class="row-total">{{ "{:,.0f}".format(item.total or 0) }}</span>
                             <button type="button" class="btn-remove" onclick="removeRow(this)">×</button>
@@ -109,7 +176,7 @@
                             </div>
                             <input type="number" name="item_qty_0" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)">
                             <input type="text" name="item_unit_0" class="unit-type-input item-unit" value="ق" readonly>
-                            <input type="number" name="item_price_0" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this)">
+                            <input type="number" name="item_price_0" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this); clearRowError(this)">
                             <input type="number" name="item_sell_price_0" class="form-control item-sell-price" min="0" step="any" placeholder="0">
                             <span class="row-total">0</span>
                             <button type="button" class="btn-remove" onclick="removeRow(this)">×</button>
@@ -122,6 +189,24 @@
             <div class="grand-total">
                 <span class="total-label">الاجمالي الكلي (مبلغ الشراء)</span>
                 <span class="total-value" id="grandTotal">0 ج.م</span>
+            </div>
+
+            <div class="data-card" style="margin-top:0;">
+                <div class="data-card-header">
+                    <h3><i class="fas fa-percentage" style="margin-left:6px;color:var(--gold);"></i> خصم امر الشراء</h3>
+                </div>
+                <div class="data-card-body">
+                    <div class="form-row" style="margin-bottom:0;">
+                        <div class="form-group" style="flex:1;">
+                            <label>مبلغ الخصم (ج.م)</label>
+                            <input type="number" name="discount" id="discountInput" class="form-control" min="0" step="any" placeholder="0" value="{% if purchase %}{{ purchase.discount or 0 }}{% endif %}" oninput="applyDiscount()">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>الاجمالي بعد الخصم</label>
+                            <div id="finalTotal" style="font-size:1.3rem;font-weight:800;color:var(--navy);padding:10px 0;">0 ج.م</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -204,10 +289,118 @@
     color: var(--text-muted);
     text-align: center;
 }
+.input-error {
+    border: 2px solid #dc2626 !important;
+    background: #fff5f5 !important;
+}
+.receipt-thumb {
+    position: relative;
+    width: 96px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 6px;
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+}
+.receipt-thumb img {
+    width: 84px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 5px;
+}
+.receipt-thumb span {
+    font-size: 0.62rem;
+    color: var(--text-muted);
+    max-width: 90px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.receipt-thumb form {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+}
+.receipt-thumb a[target="_blank"] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+}
 </style>
 
 <script>
     let rowIndex = {{ purchase.items|length if purchase and purchase.items else 1 }} - 1;
+
+function previewReceiptImages(input) {
+    var box = document.getElementById('receiptPreview');
+    box.innerHTML = '';
+    if (!input.files || !input.files.length) return;
+    Array.from(input.files).forEach(function (file) {
+        if (!/^image\//.test(file.type)) return;
+        var thumb = document.createElement('div');
+        thumb.className = 'receipt-thumb';
+        var img = document.createElement('img');
+        img.src = URL.createObjectURL(file);
+        img.alt = file.name;
+        img.title = file.name;
+        var cap = document.createElement('span');
+        cap.textContent = file.name.length > 18 ? file.name.slice(0, 15) + '…' : file.name;
+        thumb.appendChild(img);
+        thumb.appendChild(cap);
+        box.appendChild(thumb);
+    });
+}
+
+function toggleSupplierBalance() {
+    var box = document.getElementById('supplierBalanceBox');
+    var check = document.getElementById('showBalanceCheck');
+    var supId = document.getElementById('supplierId').value;
+    if (!check.checked) { box.style.display = 'none'; return; }
+    if (!supId) {
+        box.style.display = '';
+        document.getElementById('balanceTotal').textContent = '0 ج.م';
+        document.getElementById('balanceDetails').innerHTML = '';
+        document.getElementById('balanceEmpty').style.display = 'block';
+        return;
+    }
+    box.style.display = '';
+    document.getElementById('balanceTotal').textContent = 'جاري التحميل...';
+    document.getElementById('balanceDetails').innerHTML = '';
+    document.getElementById('balanceEmpty').style.display = 'none';
+    fetch('/api/supplier-balance?supplier_id=' + supId)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            document.getElementById('balanceTotal').textContent =
+                data.total_remaining.toLocaleString('ar-EG') + ' ج.م';
+            var tbody = document.getElementById('balanceDetails');
+            tbody.innerHTML = '';
+            if (data.purchases.length === 0) {
+                document.getElementById('balanceEmpty').style.display = '';
+            } else {
+                data.purchases.forEach(function(pur) {
+                    var tr = document.createElement('tr');
+                    tr.style.borderBottom = '1px solid #eee';
+                    tr.innerHTML =
+                        '<td style="padding:6px 8px;color:var(--text);">' + pur.purchase_number + '</td>' +
+                        '<td style="padding:6px 8px;">' + pur.total.toLocaleString('ar-EG') + '</td>' +
+                        '<td style="padding:6px 8px;color:#28a745;">' + pur.paid.toLocaleString('ar-EG') + '</td>' +
+                        '<td style="padding:6px 8px;color:#dc3545;font-weight:700;">' + pur.remaining.toLocaleString('ar-EG') + '</td>';
+                    tbody.appendChild(tr);
+                });
+            }
+        });
+}
+
+function clearRowError(input) {
+    input.classList.remove('input-error');
+    var toast = document.getElementById('inlineToast');
+    if (toast) toast.style.display = 'none';
+}
 let activeDropdown = null;
 let activeIndex = -1;
 
@@ -246,7 +439,7 @@ function addRow(focusField) {
         </div>
         <input type="number" name="item_qty_${rowIndex}" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)">
         <input type="text" name="item_unit_${rowIndex}" class="unit-type-input item-unit" value="ق" readonly>
-        <input type="number" name="item_price_${rowIndex}" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this)">
+        <input type="number" name="item_price_${rowIndex}" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this); clearRowError(this)">
         <input type="number" name="item_sell_price_${rowIndex}" class="form-control item-sell-price" min="0" step="any" placeholder="0">
         <span class="row-total">0</span>
         <button type="button" class="btn-remove" onclick="removeRow(this)">×</button>
@@ -323,6 +516,19 @@ function calcGrandTotal() {
         total += qty * price;
     });
     document.getElementById('grandTotal').textContent = total.toLocaleString('ar-EG') + ' ج.م';
+    applyDiscount();
+}
+
+function applyDiscount() {
+    let total = 0;
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+        const price = parseFloat(row.querySelector('.item-price').value) || 0;
+        total += qty * price;
+    });
+    const discount = parseFloat(document.getElementById('discountInput').value) || 0;
+    const final = Math.max(0, total - discount);
+    document.getElementById('finalTotal').textContent = final.toLocaleString('ar-EG') + ' ج.م';
 }
 
 let searchTimeout = null;
@@ -554,7 +760,7 @@ document.querySelectorAll('#itemsBody .item-row').forEach(function(row) {
     input.addEventListener('input', function() {
         const q = this.value.trim();
         supActiveIndex = -1;
-        if (q.length < 1) { dropdown.classList.remove('show'); hidden.value = ''; currentSupplierId = null; releaseLock(); hideLockBanner(); return; }
+        if (q.length < 1) { dropdown.classList.remove('show'); hidden.value = ''; currentSupplierId = null; releaseLock(); hideLockBanner(); document.getElementById('supplierBalanceBox').style.display = 'none'; document.getElementById('showBalanceCheck').checked = false; return; }
         clearTimeout(searchTimer);
         searchTimer = setTimeout(function() {
             fetch('/api/search-suppliers?q=' + encodeURIComponent(q))
@@ -614,11 +820,38 @@ document.querySelectorAll('#itemsBody .item-row').forEach(function(row) {
         releaseLock();
     });
 
-    document.getElementById('purchaseForm').addEventListener('submit', function() {
+    document.getElementById('purchaseForm').addEventListener('submit', function(e) {
         if (!lockAcquired && currentSupplierId) {
             alert('لا يمكنك حفظ امر الشراء. المورد مقفل من قبل موظف آخر.');
+            e.preventDefault();
             return false;
         }
+        // التحقق المسبق: منع ارسال النموذج اذا وجد صنف له كمية بدون سعر
+        var rows = document.querySelectorAll('#itemsBody .item-row');
+        var firstBad = null;
+        rows.forEach(function(row) {
+            var nameEl = row.querySelector('.item-name-input');
+            var qtyEl = row.querySelector('.item-qty');
+            var priceEl = row.querySelector('.item-price');
+            if (!nameEl || !qtyEl || !priceEl) return;
+            var name = nameEl.value.trim();
+            var qty = parseFloat(qtyEl.value) || 0;
+            var price = priceEl.value.trim();
+            if (name && qty > 0 && (price === '' || parseFloat(price) <= 0)) {
+                priceEl.classList.add('input-error');
+                if (!firstBad) firstBad = priceEl;
+            }
+        });
+        if (firstBad) {
+            e.preventDefault();
+            var toast = document.getElementById('inlineToast');
+            toast.style.display = 'flex';
+            toast.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            firstBad.focus();
+            firstBad.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return false;
+        }
+        return true;
     });
 })();
 
@@ -643,5 +876,6 @@ function togglePaymentFields() {
 }
 togglePaymentFields();
 {% if purchase %}calcGrandTotal();{% endif %}
+if (document.getElementById('showBalanceCheck').checked) { toggleSupplierBalance(); }
 </script>
 {% endblock %}
