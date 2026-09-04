@@ -228,6 +228,7 @@
                         <th>طريقة الدفع</th>
                         <th>الموظف</th>
                         <th>ملاحظات</th>
+                        <th style="width:60px;"></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -238,13 +239,18 @@
                         <td>{{ PAYMENT_METHODS.get(p.payment_method) or 'كاش' }}</td>
                         <td>{{ (p.creator.full_name or p.creator.username) if p.creator else '—' }}</td>
                         <td>{{ p.notes or '—' }}</td>
+                        <td style="text-align:center;">
+                            <form method="POST" action="{{ url_for('payment_delete', payment_id=p.id, next_invoice=invoice.id) }}" class="no-print" onsubmit="return confirm('هل انت متأكد من حذف هذه الدفعة؟');" style="margin:0;display:inline;">
+                                <button type="submit" class="btn btn-danger" style="padding:2px 8px;font-size:0.72rem;" title="حذف الدفعة"><i class="fas fa-trash"></i></button>
+                            </form>
+                        </td>
                     </tr>
                 {% endfor %}
                 </tbody>
                 <tfoot>
                     <tr>
                         <td colspan="2" style="font-weight:800;color:#059669;">اجمالي مدفوعات هذه الفاتورة: {{ "{:,.0f}".format(invoice_payments|sum(attribute='amount')) }} ج.م</td>
-                        <td colspan="3"></td>
+                        <td colspan="4"></td>
                     </tr>
                 </tfoot>
             </table>

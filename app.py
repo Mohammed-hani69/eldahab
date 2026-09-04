@@ -1477,6 +1477,10 @@ def payment_delete(payment_id):
     db.session.delete(p)
     db.session.commit()
     flash('تم حذف الدفعة بنجاح', 'success')
+    # اذا تم الحذف من صفحة الفاتورة ارجع اليها، والا ارجع لصفحة العميل
+    next_inv = request.args.get('next_invoice')
+    if next_inv and next_inv.isdigit():
+        return redirect(url_for('invoice_view', invoice_id=int(next_inv)))
     return redirect(url_for('customer_profile', customer_id=cid))
 
 
