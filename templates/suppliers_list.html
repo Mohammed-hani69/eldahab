@@ -12,10 +12,20 @@
 
 <div class="data-card" style="margin-bottom:24px;">
     <div class="data-card-body">
-        <form method="GET" action="{{ url_for('suppliers_list') }}" style="display:flex;gap:12px;flex-wrap:wrap;">
+        <form method="GET" action="{{ url_for('suppliers_list') }}" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
             <input type="text" name="search" class="form-control" placeholder="بحث بالاسم..." value="{{ search }}" style="flex:1;min-width:200px;">
+            <select name="balance" class="form-control" style="max-width:200px;">
+                <option value="">جميع الرصيد</option>
+                <option value="has" {% if balance_filter == 'has' %}selected{% endif %}>عليه متبقي</option>
+                <option value="none" {% if balance_filter == 'none' %}selected{% endif %}>لا يوجد متبقي</option>
+            </select>
+            <select name="sort" class="form-control" style="max-width:200px;">
+                <option value="name">ترتيب بالاسم</option>
+                <option value="balance_desc" {% if sort == 'balance_desc' %}selected{% endif %}>المتبقي تنازلي</option>
+                <option value="balance_asc" {% if sort == 'balance_asc' %}selected{% endif %}>المتبقي تصاعدي</option>
+            </select>
             <button type="submit" class="btn btn-gold"><i class="fas fa-search"></i> بحث</button>
-            {% if search %}
+            {% if search or balance_filter or sort %}
             <a href="{{ url_for('suppliers_list') }}" class="btn btn-outline"><i class="fas fa-times"></i> مسح</a>
             {% endif %}
         </form>

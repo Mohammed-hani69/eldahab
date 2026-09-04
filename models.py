@@ -172,6 +172,8 @@ class Return(db.Model):
     customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
     invoice_id = db.Column(db.Integer, db.ForeignKey('invoices.id'), nullable=True)
     total_amount = db.Column(db.Float, default=0)
+    balance_before = db.Column(db.Float, default=0)
+    balance_after = db.Column(db.Float, default=0)
     date = db.Column(db.DateTime, default=datetime.utcnow)
     reason = db.Column(db.Text)
     items = db.relationship('ReturnItem', backref='return_entry', lazy=True, cascade='all, delete-orphan')
@@ -198,10 +200,14 @@ class Supplier(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     purchases = db.relationship('Purchase', backref='supplier', lazy=True)
     payments = db.relationship('SupplierPayment', backref='supplier', lazy=True)
+    returns = db.relationship('SupplierReturn', backref='supplier', lazy=True)
     installment_plans = db.relationship('SupplierInstallmentPlan', backref='supplier', lazy=True)
 
     def total_purchased(self):
         return sum(p.total for p in self.purchases)
+
+    def total_returns(self):
+        return sum(r.total_amount for r in self.returns)
 
     def total_paid(self):
         # الدفعات المسجلة + مبالغ أقساط المورد المدفوعة + الدفع الفوري على أوامر
@@ -218,7 +224,7 @@ class Supplier(db.Model):
         return sum_payments + sum_inst + sum_pur_paid
 
     def balance(self):
-        return self.total_purchased() - self.total_paid()
+        return self.total_purchased() - self.total_paid() - self.total_returns()
 
     def total_credit(self):
         return sum(p.total for p in self.purchases if p.payment_type == 'credit')
@@ -288,6 +294,31 @@ class SupplierPayment(db.Model):
     receipt_image = db.Column(db.String(200))
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     creator = db.relationship('User', foreign_keys=[created_by])
+
+
+class SupplierReturn(db.Model):
+    __tablename__ = 'supplier_returns'
+    id = db.Column(db.Integer, primary_key=True)
+    supplier_id = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=False)
+    purchase_id = db.Column(db.Integer, db.ForeignKey('purchases.id'), nullable=True)
+    total_amount = db.Column(db.Float, default=0)
+    balance_before = db.Column(db.Float, default=0)
+    balance_after = db.Column(db.Float, default=0)
+    date = db.Column(db.DateTime, default=datetime.utcnow)
+    reason = db.Column(db.Text)
+    items = db.relationship('SupplierReturnItem', backref='return_entry', lazy=True, cascade='all, delete-orphan')
+    purchase = db.relationship('Purchase', foreign_keys=[purchase_id], backref='supplier_returns', lazy=True)
+
+
+class SupplierReturnItem(db.Model):
+    __tablename__ = 'supplier_return_items'
+    id = db.Column(db.Integer, primary_key=True)
+    return_id = db.Column(db.Integer, db.ForeignKey('supplier_returns.id'), nullable=False)
+    item_name = db.Column(db.String(300), nullable=False)
+    unit_type = db.Column(db.String(10), nullable=False, default='ق')
+    quantity = db.Column(db.Float, nullable=False, default=0)
+    unit_price = db.Column(db.Float, nullable=False, default=0)
+    total = db.Column(db.Float, nullable=False, default=0)
 
 
 class InstallmentPlan(db.Model):

@@ -658,7 +658,8 @@ function bindAutocomplete(input) {
 }
 
 function fetchItemPrice(name, row) {
-    fetch('/api/item-price?name=' + encodeURIComponent(name))
+    const custId = document.getElementById('customerId').value;
+    fetch('/api/item-price?name=' + encodeURIComponent(name) + '&customer_id=' + encodeURIComponent(custId || ''))
         .then(r => r.json())
         .then(data => {
             if (data.found && data.selling_price > 0) {

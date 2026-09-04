@@ -31,7 +31,6 @@
                     <th>المبلغ</th>
                     <th>طريقة الدفع</th>
                     <th>الايصال</th>
-                    <th>رقم الفاتورة</th>
                     <th>التاريخ</th>
                     <th>ملاحظات</th>
                     <th>الموظف</th>
@@ -57,11 +56,6 @@
                         <a href="{{ url_for('static', filename='uploads/receipts/' + p.receipt_image) }}" target="_blank" title="عرض الايصال"><i class="fas fa-image" style="color:var(--gold);font-size:1rem;"></i></a>
                         {% else %}—{% endif %}
                     </td>
-                    <td>
-                        {% if p.invoice %}
-                        <a href="{{ url_for('invoice_view', invoice_id=p.invoice.id) }}" style="color:var(--navy);text-decoration:none;">{{ p.invoice.invoice_number }}</a>
-                        {% else %}—{% endif %}
-                    </td>
                     <td>{{ p.date.strftime('%Y-%m-%d') }}</td>
                     <td>{{ p.notes or '—' }}</td>
                     <td style="font-size:0.78rem;color:var(--text-secondary);">{{ p.creator.full_name or p.creator.username if p.creator else '—' }}</td>
@@ -78,7 +72,7 @@
                 {% endfor %}
                 {% if not payments %}
                 <tr>
-                    <td colspan="11" class="empty-state" style="padding:40px;">
+                    <td colspan="10" class="empty-state" style="padding:40px;">
                         <div class="empty-icon"><i class="fas fa-money-bill-wave"></i></div>
                         <p>لا توجد مدفوعات</p>
                     </td>

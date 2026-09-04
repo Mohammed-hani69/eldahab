@@ -20,8 +20,19 @@
                 <option value="{{ key }}" {% if request.args.get('account_type') == key %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
+            <select name="balance" class="form-control" style="max-width:200px;">
+                <option value="">جميع الرصيد</option>
+                <option value="has" {% if balance_filter == 'has' %}selected{% endif %}>عليه متبقي</option>
+                <option value="none" {% if balance_filter == 'none' %}selected{% endif %}>لا يوجد متبقي</option>
+            </select>
+            <select name="sort" class="form-control" style="max-width:220px;">
+                <option value="name">ترتيب بالاسم</option>
+                <option value="balance_desc" {% if sort == 'balance_desc' %}selected{% endif %}>المتبقي تنازلي</option>
+                <option value="balance_asc" {% if sort == 'balance_asc' %}selected{% endif %}>المتبقي تصاعدي</option>
+                <option value="type" {% if sort == 'type' %}selected{% endif %}>نوع الحساب</option>
+            </select>
             <button type="submit" class="btn btn-gold"><i class="fas fa-search"></i> بحث</button>
-            {% if search or selected_type %}
+            {% if search or selected_type or balance_filter or sort %}
             <a href="{{ url_for('customers_list') }}" class="btn btn-outline"><i class="fas fa-times"></i> مسح الفلتر</a>
             {% endif %}
         </form>

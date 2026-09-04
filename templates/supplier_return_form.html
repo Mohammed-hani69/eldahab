@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+    <h1 style="font-size:1.3rem;font-weight:700;color:var(--text);margin:0;"><i class="fas fa-undo-alt" style="margin-left:8px;"></i> {% if ret %}تعديل مرتجع المورد{% else %}تسجيل مرتجع مورد{% endif %}</h1>
+    <a href="{{ url_for('supplier_profile', supplier_id=supplier.id) }}" class="btn btn-ghost"><i class="fas fa-arrow-right" style="margin-left:4px;"></i> رجوع للملف</a>
+</div>
+
+<div class="data-card" style="margin-bottom:20px;">
+    <div class="data-card-header">
+        <h3><i class="fas fa-user" style="margin-left:6px;color:var(--gold);"></i> بيانات المورد</h3>
+    </div>
+    <div class="data-card-body">
+        <div class="form-row">
+            <div><strong>المورد:</strong> {{ supplier.name }}</div>
+            <div><strong>الهاتف:</strong> {{ supplier.phone or '—' }}</div>
+        </div>
+    </div>
+</div>
+
+<form method="POST">
+    <div class="two-col">
+
+        <div>
+            <div class="data-card" style="margin-bottom:20px;">
+                <div class="data-card-header">
+                    <h3><i class="fas fa-undo-alt" style="margin-left:6px;color:var(--gold);"></i> بيانات المرتجع</h3>
+                </div>
+                <div class="data-card-body">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label><i class="fas fa-file-invoice" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> امر الشراء (اختياري)</label>
+                            <select name="purchase_id" class="form-control">
+                                <option value="">-- بدون امر شراء --</option>
+                                {% for p in purchases %}
+                                <option value="{{ p.id }}" {% if ret and ret.purchase_id == p.id %}selected{% endif %}>{{ p.purchase_number }} - {{ p.date.strftime('%Y-%m-%d') }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label><i class="fas fa-comment-dots" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> سبب المرتجع</label>
+                            <textarea name="reason" class="form-control" rows="2" placeholder="سبب المرتجع...">{% if ret %}{{ ret.reason or '' }}{% endif %}</textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="data-card">
+                <div class="data-card-header">
+                    <h3><i class="fas fa-boxes" style="margin-left:6px;color:var(--gold);"></i> اصناف المرتجع</h3>
+                    <button type="button" class="btn btn-gold btn-sm" onclick="addRow()"><i class="fas fa-plus"></i> اضافة صنف</button>
+                </div>
+                <div class="data-card-body" style="padding:16px;">
+                    <div class="item-row invoice-row header">
+                        <span>#</span>
+                        <span>اسم الصنف</span>
+                        <span>الفئة</span>
+                        <span>الكمية</span>
+                        <span>سعر الوحدة</span>
+                        <span>الاجمالي</span>
+                        <span></span>
+                    </div>
+                    <div id="itemsBody">
+                        {% if ret %}
+                        {% for it in ret.items %}
+                        <div class="item-row invoice-row" data-index="{{ loop.index0 }}">
+                            <span>{{ loop.index }}</span>
+                            <input type="text" name="item_name_{{ loop.index0 }}" class="form-control item-name-input" value="{{ it.item_name }}">
+                            <input type="text" name="item_unit_{{ loop.index0 }}" class="unit-type-input item-unit" value="{{ it.unit_type or 'ق' }}" readonly>
+                            <input type="number" name="item_qty_{{ loop.index0 }}" class="form-control item-qty" min="0" step="any" value="{{ it.quantity or 0 }}" oninput="calcRow(this)">
+                            <input type="number" name="item_price_{{ loop.index0 }}" class="form-control item-price" min="0" step="any" value="{{ it.unit_price or 0 }}" oninput="calcRow(this)">
+                            <span class="row-total">{{ "{:,.0f}".format(it.total or 0) }}</span>
+                            <button type="button" class="btn-remove" onclick="removeRow(this)">×</button>
+                        </div>
+                        {% endfor %}
+                        {% else %}
+                        <div class="item-row invoice-row" data-index="0">
+                            <span>1</span>
+                            <input type="text" name="item_name_0" class="form-control item-name-input" placeholder="اسم الصنف">
+                            <input type="text" name="item_unit_0" class="unit-type-input item-unit" value="ق" readonly>
+                            <input type="number" name="item_qty_0" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)">
+                            <input type="number" name="item_price_0" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this)">
+                            <span class="row-total">0</span>
+                            <button type="button" class="btn-remove" onclick="removeRow(this)">×</button>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="grand-total">
+                <span class="total-label">اجمالي المرتجع</span>
+                <span class="total-value" id="grandTotal">0 ج.م</span>
+            </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:20px;">
+            <div class="data-card" style="border:none;box-shadow:none;background:transparent;">
+                <button type="submit" class="btn btn-gold btn-lg" style="width:100%;">
+                    <i class="fas fa-save"></i> {% if ret %}حفظ التعديلات{% else %}تسجيل المرتجع{% endif %}
+                </button>
+            </div>
+        </div>
+
+    </div>
+</form>
+
+<style>
+.unit-type-input {
+    width: 100%;
+    padding: 7px 4px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-align: center;
+    border: 1px solid var(--border-light);
+    border-radius: 5px;
+    background: #fff;
+    color: var(--navy);
+    cursor: pointer;
+    user-select: none;
+}
+</style>
+
+<script>
+let rowIndex = {{ (ret.items|length - 1) if ret and ret.items else 0 }};
+
+function bindTabNavigation(row) {
+    var priceInput = row.querySelector('.item-price');
+    if (priceInput) {
+        priceInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Tab' && !e.shiftKey) {
+                e.preventDefault();
+                addRow('name');
+            }
+        });
+    }
+}
+
+function bindUnitToggle(input) {
+    if (!input) return;
+    var units = ['ق', 'ك', 'د'];
+    input.addEventListener('click', function() {
+        var idx = units.indexOf(this.value);
+        this.value = units[(idx + 1) % units.length];
+    });
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            var idx = units.indexOf(this.value);
+            this.value = units[(idx + 1) % units.length];
+        }
+    });
+}
+
+function addRow(focusField) {
+    rowIndex++;
+    const container = document.getElementById('itemsBody');
+    const div = document.createElement('div');
+    div.className = 'item-row invoice-row';
+    div.dataset.index = rowIndex;
+    div.innerHTML = `
+        <span>${rowIndex + 1}</span>
+        <input type="text" name="item_name_${rowIndex}" class="form-control item-name-input" placeholder="اسم الصنف">
+        <input type="text" name="item_unit_${rowIndex}" class="unit-type-input item-unit" value="ق" readonly>
+        <input type="number" name="item_qty_${rowIndex}" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)">
+        <input type="number" name="item_price_${rowIndex}" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this)">
+        <span class="row-total">0</span>
+        <button type="button" class="btn-remove" onclick="removeRow(this)">×</button>
+    `;
+    container.appendChild(div);
+    bindTabNavigation(div);
+    bindUnitToggle(div.querySelector('.item-unit'));
+    bindArrowNav(div);
+    if (focusField === 'name') {
+        const target = div.querySelector('.item-name-input');
+        if (target) { setTimeout(function() { target.focus(); }, 0); }
+    }
+}
+
+function removeRow(btn) {
+    const container = document.getElementById('itemsBody');
+    if (container.children.length > 1) {
+        btn.closest('.item-row').remove();
+        renumber();
+        calcGrandTotal();
+    }
+}
+function renumber() {
+    document.querySelectorAll('#itemsBody .item-row').forEach((r, i) => {
+        r.querySelector('span').textContent = i + 1;
+    });
+}
+function calcRow(el) {
+    const row = el.closest('.item-row');
+    const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+    const price = parseFloat(row.querySelector('.item-price').value) || 0;
+    row.querySelector('.row-total').textContent = (qty * price).toLocaleString('ar-EG');
+    calcGrandTotal();
+}
+function calcGrandTotal() {
+    let total = 0;
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+        const price = parseFloat(row.querySelector('.item-price').value) || 0;
+        total += qty * price;
+    });
+    document.getElementById('grandTotal').textContent = total.toLocaleString('ar-EG') + ' ج.م';
+}
+
+var GRID_COLS_RETURN = ['.item-name-input', '.item-unit', '.item-qty', '.item-price'];
+
+function focusTarget(target) {
+    if (!target) return;
+    target.focus();
+    if (target.type === 'text') { try { target.setSelectionRange(0, 0); } catch (err) {} }
+}
+
+function bindArrowNav(row) {
+    var inputs = GRID_COLS_RETURN.map(function(sel) { return row.querySelector(sel); }).filter(Boolean);
+    inputs.forEach(function(inp, idx) {
+        inp.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowRight' && idx < inputs.length - 1) {
+                e.preventDefault();
+                focusTarget(inputs[idx + 1]);
+            } else if (e.key === 'ArrowLeft' && idx > 0) {
+                e.preventDefault();
+                focusTarget(inputs[idx - 1]);
+            } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                var allRows = Array.from(document.getElementById('itemsBody').querySelectorAll('.item-row'));
+                var rowIdx = allRows.indexOf(row);
+                if (e.key === 'ArrowDown' && rowIdx < allRows.length - 1) {
+                    e.preventDefault();
+                    focusTarget(allRows[rowIdx + 1].querySelector(GRID_COLS_RETURN[idx]));
+                } else if (e.key === 'ArrowUp' && rowIdx > 0) {
+                    e.preventDefault();
+                    focusTarget(allRows[rowIdx - 1].querySelector(GRID_COLS_RETURN[idx]));
+                }
+            }
+        });
+    });
+}
+
+document.querySelectorAll('#itemsBody .item-row').forEach(function(row) {
+    bindTabNavigation(row);
+    bindUnitToggle(row.querySelector('.item-unit'));
+    bindArrowNav(row);
+});
+calcGrandTotal();
+</script>
+{% endblock %}

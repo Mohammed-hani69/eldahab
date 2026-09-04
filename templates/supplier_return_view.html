@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-header">
+    <h1 style="font-size:1.3rem;font-weight:700;color:var(--text);margin:0;">مرتجع مورد #{{ ret.id }}</h1>
+    <div style="display:flex;gap:8px;">
+        <a href="{{ url_for('supplier_profile', supplier_id=supplier.id) }}" class="btn btn-outline"><i class="fas fa-arrow-right"></i> رجوع للملف</a>
+        <button class="btn btn-gold" onclick="window.print();"><i class="fas fa-print"></i> طباعة</button>
+    </div>
+</div>
+
+<div class="invoice-print" id="printArea">
+    <div class="invoice-print-header">
+        <div>
+            <div class="company-name">El Dahab Trading</div>
+            <div style="font-size:0.95rem;font-weight:700;margin-top:2px;">مرتجع مورد</div>
+        </div>
+        <div style="text-align:left;">
+            <div style="font-size:1.2rem;font-weight:900;color:var(--gold);">مرتجع #{{ ret.id }}</div>
+            <div style="font-size:0.8rem;color:rgba(255,255,255,0.85);">{{ ret.date.strftime('%Y-%m-%d') }}</div>
+            {% if ret.purchase %}
+            <div style="font-size:0.8rem;color:rgba(255,255,255,0.85);">امر الشراء: {{ ret.purchase.purchase_number }}</div>
+            {% endif %}
+        </div>
+    </div>
+    <div class="invoice-info">
+        <div><strong>المورد:</strong> {{ supplier.name }}</div>
+        <div><strong>الهاتف:</strong> {{ supplier.phone or '—' }}</div>
+        <div><strong>اجمالي المرتجع:</strong> {{ "{:,.0f}".format(ret.total_amount or 0) }} ج.م</div>
+        <div><strong>رصيد المورد الحالي:</strong> {{ "{:,.0f}".format(balance_after or 0) }} ج.م</div>
+    </div>
+
+    <div class="invoice-items-area">
+        <table class="compact-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>اسم الصنف</th>
+                    <th>الفئة</th>
+                    <th>الكمية</th>
+                    <th>سعر الوحدة</th>
+                    <th>الاجمالي</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for it in ret.items %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td style="font-weight:700;">{{ it.item_name }}</td>
+                    <td style="text-align:center;">{{ it.unit_type or 'ق' }}</td>
+                    <td style="text-align:center;">{{ it.quantity }}</td>
+                    <td>{{ "{:,.0f}".format(it.unit_price or 0) }}</td>
+                    <td style="font-weight:800;">{{ "{:,.0f}".format(it.total or 0) }} ج.م</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div style="padding:14px 16px;">
+        <div class="totals-row">
+            <div class="grand-total compact-total total-box total-dues">
+                <span class="total-label">الرصيد قبل المرتجع</span>
+                <span class="total-value">{{ "{:,.0f}".format(balance_before or 0) }} ج.م</span>
+            </div>
+            <div class="grand-total compact-total total-box total-grand">
+                <span class="total-label">الرصيد بعد المرتجع</span>
+                <span class="total-value">{{ "{:,.0f}".format(balance_after or 0) }} ج.م</span>
+            </div>
+        </div>
+        {% if ret.reason %}
+        <div class="invoice-notes" style="margin-top:10px;">
+            <span class="notes-label"><i class="fas fa-comment-dots" style="margin-left:4px;"></i> سبب المرتجع:</span>
+            <span class="notes-text">{{ ret.reason }}</span>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

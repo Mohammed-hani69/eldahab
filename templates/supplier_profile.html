@@ -5,7 +5,8 @@
     <h1 style="font-size:1.3rem;font-weight:700;color:var(--text);">ملف المورد</h1>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <a href="{{ url_for('supplier_statement', supplier_id=supplier.id) }}" class="btn btn-navy"><i class="fas fa-file-invoice-dollar"></i> كشف حساب</a>
-        <a href="{{ url_for('supplier_payment_add', supplier_id=supplier.id) }}" class="btn btn-gold"><i class="fas fa-plus"></i> اضافة دفعة</a>
+        <a href="{{ url_for('supplier_payment_add', supplier_id=supplier.id) }}" class="btn btn-gold"><i class="fas fa-money-bill-wave"></i> اضافة دفعة</a>
+        <a href="{{ url_for('supplier_return_add', supplier_id=supplier.id) }}" class="btn btn-outline"><i class="fas fa-undo-alt"></i> مرتجع</a>
         <a href="{{ url_for('supplier_edit', supplier_id=supplier.id) }}" class="btn btn-outline"><i class="fas fa-edit"></i> تعديل</a>
         <form method="POST" action="{{ url_for('supplier_delete', supplier_id=supplier.id) }}" style="display:inline;" onsubmit="return confirm('هل انت متاكد من حذف هذا المورد؟');">
             <button type="submit" class="btn btn-danger"><i class="fas fa-trash"></i> حذف</button>
@@ -29,6 +30,10 @@
             <div class="balance-label">اجمالي المدفوعات (ج.م)</div>
         </div>
         <div class="balance-item">
+            <div class="balance-value">{{ "{:,.0f}".format(supplier.total_returns() or 0) }}</div>
+            <div class="balance-label">اجمالي المرتجعات (ج.م)</div>
+        </div>
+        <div class="balance-item">
             <div class="balance-value" style="color:{{ '#ff6b6b' if supplier.balance() > 0 else '#51cf66' }}">{{ "{:,.0f}".format(supplier.balance() or 0) }}</div>
             <div class="balance-label">المتبقي (ج.م)</div>
         </div>
@@ -42,6 +47,7 @@
                 <div class="tabs" style="margin:0;border-radius:0;border-bottom:1px solid var(--border);">
                     <button class="tab-btn active" onclick="switchTab(this, 'purchases')" style="flex:1;"><i class="fas fa-shopping-cart" style="margin-left:4px;"></i> المشتريات ({{ purchases|length }})</button>
                     <button class="tab-btn" onclick="switchTab(this, 'supplier-payments')" style="flex:1;"><i class="fas fa-money-bill-wave" style="margin-left:4px;"></i> المدفوعات ({{ payments|length }})</button>
+                    <button class="tab-btn" onclick="switchTab(this, 'returns')" style="flex:1;"><i class="fas fa-undo-alt" style="margin-left:4px;"></i> المرتجعات ({{ returns|length }})</button>
                     <button class="tab-btn" onclick="switchTab(this, 'installments')" style="flex:1;"><i class="fas fa-calendar-check" style="margin-left:4px;"></i> الاقساط ({{ installment_plans|length }})</button>
                 </div>
 
@@ -82,7 +88,7 @@
                                 <th>الايصال</th>
                                 <th>ملاحظات</th>
                                 <th>الموظف</th>
-                                <th>طباعة</th>
+                                <th>الاجراءات</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -99,11 +105,57 @@
                                 </td>
                                 <td>{{ p.notes or '—' }}</td>
                                 <td style="font-size:0.78rem;color:var(--text-secondary);">{{ p.creator.full_name or p.creator.username if p.creator else '—' }}</td>
-                                <td><a href="{{ url_for('supplier_payment_receipt', payment_id=p.id) }}" target="_blank" class="btn btn-sm btn-outline" title="طباعة"><i class="fas fa-print"></i></a></td>
+                                <td style="text-align:left;white-space:nowrap;">
+                                    <a href="{{ url_for('supplier_payment_receipt', payment_id=p.id) }}" target="_blank" class="btn btn-sm btn-outline" title="طباعة"><i class="fas fa-print"></i></a>
+                                    <a href="{{ url_for('supplier_payment_edit', payment_id=p.id) }}" class="btn btn-ghost btn-sm" title="تعديل"><i class="fas fa-edit" style="color:var(--gold);"></i></a>
+                                    <form method="POST" action="{{ url_for('supplier_payment_delete', payment_id=p.id) }}" style="display:inline;" onsubmit="return confirm('هل انت متاكد من حذف هذه الدفعة؟');">
+                                        <button type="submit" class="btn btn-ghost btn-sm" title="حذف"><i class="fas fa-trash" style="color:var(--danger);"></i></button>
+                                    </form>
+                                </td>
                             </tr>
                             {% endfor %}
                             {% if not payments %}
                             <tr><td colspan="8" class="empty-state" style="padding:40px;"><p>لا توجد مدفوعات</p></td></tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="tab-returns" class="tab-content" style="display:none;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>التاريخ</th>
+                                <th>عدد الاصناف</th>
+                                <th>اجمالي المبلغ</th>
+                                <th>الرصيد قبل</th>
+                                <th>الرصيد بعد</th>
+                                <th>السبب</th>
+                                <th style="width:90px;">الاجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in returns %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td>{{ r.date.strftime('%Y-%m-%d') }}</td>
+                                <td>{{ r.items|length }} صنف</td>
+                                <td class="text-danger" style="font-weight:800;">{{ "{:,.0f}".format(r.total_amount or 0) }} ج.م</td>
+                                <td style="font-weight:600;">{{ "{:,.0f}".format(r.balance_before or 0) }} ج.م</td>
+                                <td style="font-weight:600;">{{ "{:,.0f}".format(r.balance_after or 0) }} ج.م</td>
+                                <td style="font-size:0.82rem;">{{ r.reason or '—' }}</td>
+                                <td style="text-align:left;white-space:nowrap;">
+                                    <a href="{{ url_for('supplier_return_view', supplier_id=supplier.id, return_id=r.id) }}" class="btn btn-ghost btn-sm" title="عرض وطباعة"><i class="fas fa-print" style="color:var(--navy);"></i></a>
+                                    <a href="{{ url_for('supplier_return_edit', supplier_id=supplier.id, return_id=r.id) }}" class="btn btn-ghost btn-sm" title="تعديل"><i class="fas fa-edit" style="color:var(--gold);"></i></a>
+                                    <form method="POST" action="{{ url_for('supplier_return_delete', supplier_id=supplier.id, return_id=r.id) }}" style="display:inline;" onsubmit="return confirm('هل انت متاكد من حذف هذا المرتجع؟');">
+                                        <button type="submit" class="btn btn-ghost btn-sm" title="حذف"><i class="fas fa-trash" style="color:var(--danger);"></i></button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            {% if not returns %}
+                            <tr><td colspan="8" class="empty-state" style="padding:40px;"><p>لا توجد مرتجعات</p></td></tr>
                             {% endif %}
                         </tbody>
                     </table>
@@ -196,6 +248,7 @@
                 <div style="display:flex;flex-direction:column;gap:8px;">
                     <a href="{{ url_for('supplier_statement', supplier_id=supplier.id) }}" class="btn btn-navy" style="width:100%;justify-content:center;"><i class="fas fa-file-invoice-dollar"></i> كشف حساب</a>
                     <a href="{{ url_for('supplier_payment_add', supplier_id=supplier.id) }}" class="btn btn-gold" style="width:100%;justify-content:center;"><i class="fas fa-money-bill-wave"></i> اضافة دفعة</a>
+                    <a href="{{ url_for('supplier_return_add', supplier_id=supplier.id) }}" class="btn btn-outline" style="width:100%;justify-content:center;"><i class="fas fa-undo-alt"></i> تسجيل مرتجع</a>
                     <a href="{{ url_for('supplier_edit', supplier_id=supplier.id) }}" class="btn btn-outline" style="width:100%;justify-content:center;"><i class="fas fa-edit"></i> تعديل البيانات</a>
                     <form method="POST" action="{{ url_for('supplier_delete', supplier_id=supplier.id) }}" style="display:inline;" onsubmit="return confirm('هل انت متاكد من حذف هذا المورد؟');">
                         <button type="submit" class="btn btn-danger" style="width:100%;justify-content:center;"><i class="fas fa-trash"></i> حذف المورد</button>

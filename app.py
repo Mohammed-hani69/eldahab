@@ -6,6 +6,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 from werkzeug.utils import secure_filename
 from models import (db, Customer, Invoice, InvoiceItem, Payment, Return, ReturnItem,
                     Supplier, Purchase, PurchaseItem, SupplierPayment,
+                    SupplierReturn, SupplierReturnItem,
                     InstallmentPlan, Installment, InstallmentPayment,
                     SupplierInstallmentPlan, SupplierInstallment, SupplierInstallmentPayment,
                     ShippingCompany, User, UserPermission, EntityLock)
@@ -154,6 +155,7 @@ PAGE_MAP = {
     'invoice_delete': 'invoices',
     'return_add': 'customers',
     'return_edit': 'customers',
+    'customer_return_view': 'customers',
     'customer_statement': 'customers',
     'customers_statement_all': 'customers',
     'payment_add': 'payments',    'payments_list': 'payments',
@@ -169,6 +171,12 @@ PAGE_MAP = {
     'supplier_edit': 'suppliers',
     'supplier_delete': 'suppliers',
     'supplier_payment_add': 'suppliers',
+    'supplier_payment_edit': 'suppliers',
+    'supplier_payment_delete': 'suppliers',
+    'supplier_return_add': 'suppliers',
+    'supplier_return_edit': 'suppliers',
+    'supplier_return_delete': 'suppliers',
+    'supplier_return_view': 'suppliers',
     'supplier_statement': 'suppliers',
     'suppliers_statement_all': 'suppliers',
     'purchases_list': 'purchases',
@@ -249,6 +257,34 @@ with app.app_context():
         if 'unit_type' not in return_item_cols:
             db.session.execute(db.text("ALTER TABLE return_items ADD COLUMN unit_type VARCHAR(10) DEFAULT 'ق'"))
 
+        ret_cols = {c['name'] for c in inspector.get_columns('returns')}
+        if 'balance_before' not in ret_cols:
+            db.session.execute(db.text("ALTER TABLE returns ADD COLUMN balance_before FLOAT DEFAULT 0"))
+        if 'balance_after' not in ret_cols:
+            db.session.execute(db.text("ALTER TABLE returns ADD COLUMN balance_after FLOAT DEFAULT 0"))
+
+        db.session.execute(db.text(
+            "CREATE TABLE IF NOT EXISTS supplier_returns ("
+            " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            " supplier_id INTEGER NOT NULL,"
+            " purchase_id INTEGER,"
+            " total_amount FLOAT DEFAULT 0,"
+            " balance_before FLOAT DEFAULT 0,"
+            " balance_after FLOAT DEFAULT 0,"
+            " date DATETIME,"
+            " reason TEXT)"
+        ))
+        db.session.execute(db.text(
+            "CREATE TABLE IF NOT EXISTS supplier_return_items ("
+            " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            " return_id INTEGER NOT NULL,"
+            " item_name VARCHAR(300) NOT NULL,"
+            " unit_type VARCHAR(10) DEFAULT 'ق',"
+            " quantity FLOAT NOT NULL DEFAULT 0,"
+            " unit_price FLOAT NOT NULL DEFAULT 0,"
+            " total FLOAT NOT NULL DEFAULT 0)"
+        ))
+
         sp_cols = {c['name'] for c in inspector.get_columns('supplier_payments')}
         if 'purchase_id' not in sp_cols:
             db.session.execute(db.text("ALTER TABLE supplier_payments ADD COLUMN purchase_id INTEGER"))
@@ -304,6 +340,7 @@ with app.app_context():
             "CREATE INDEX IF NOT EXISTS ix_purchases_supplier ON purchases (supplier_id)",
             "CREATE INDEX IF NOT EXISTS ix_purchases_date ON purchases (date)",
             "CREATE INDEX IF NOT EXISTS ix_supplier_payments_supplier ON supplier_payments (supplier_id)",
+            "CREATE INDEX IF NOT EXISTS ix_supplier_returns_supplier ON supplier_returns (supplier_id)",
             "CREATE INDEX IF NOT EXISTS ix_installment_plans_customer ON installment_plans (customer_id)",
             "CREATE INDEX IF NOT EXISTS ix_supp_installment_plans_supplier ON supplier_installment_plans (supplier_id)",
         ]
@@ -816,6 +853,8 @@ def current_user():
 def customers_list():
     account_type = request.args.get('account_type', '')
     search = request.args.get('search', '')
+    balance_filter = request.args.get('balance', '')
+    sort = request.args.get('sort', 'name')
     query = Customer.query
     if account_type:
         query = query.filter_by(account_type=account_type)
@@ -824,9 +863,23 @@ def customers_list():
         query = query.filter(Customer.account_type != 'supplier')
     if search:
         query = query.filter(Customer.name.contains(search) | Customer.phone.contains(search))
-    customers = query.order_by(Customer.name).all()
+    customers = query.all()
+    # فلاتر الرصيد الفعلية: البيانات محسوبة ديناميكياً من DB وليست مجرد واجهة
+    if balance_filter == 'has':
+        customers = [c for c in customers if c.balance() > 0]
+    elif balance_filter == 'none':
+        customers = [c for c in customers if c.balance() <= 0]
+    if sort == 'balance_desc':
+        customers.sort(key=lambda x: x.balance(), reverse=True)
+    elif sort == 'balance_asc':
+        customers.sort(key=lambda x: x.balance())
+    elif sort == 'type':
+        customers.sort(key=lambda x: (x.account_type or '', x.name or ''))
+    else:
+        customers.sort(key=lambda x: x.name or '')
     return render_template('customers_list.html', customers=customers,
-        ACCOUNT_TYPES=ACCOUNT_TYPES, selected_type=account_type, search=search)
+        ACCOUNT_TYPES=ACCOUNT_TYPES, selected_type=account_type, search=search,
+        balance_filter=balance_filter, sort=sort)
 
 
 @app.route('/customers/add', methods=['GET', 'POST'])
@@ -884,8 +937,6 @@ def _customer_statement_rows(c):
 
     for p in c.payments:
         lbl = f"دفعة ({PAYMENT_METHODS.get(p.payment_method, 'كاش')})"
-        if p.invoice_id and p.invoice:
-            lbl += f' - فاتورة {p.invoice.invoice_number}'
         if p.notes:
             lbl += f' ({p.notes})'
         entries.append({'date': p.date, 'label': lbl, 'debit': 0, 'credit': p.amount or 0})
@@ -1043,8 +1094,16 @@ def invoice_add():
             iname = request.form.get(f'item_name_{i}', '').strip()
             if not iname:
                 continue
-            qty = float(request.form.get(f'item_qty_{i}', 0))
-            price = float(request.form.get(f'item_price_{i}', 0))
+            try:
+                qty = float(request.form.get(f'item_qty_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                qty = 0
+            try:
+                price = float(request.form.get(f'item_price_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                price = 0
+            if qty <= 0:
+                continue
             unit_type = request.form.get(f'item_unit_{i}', 'ق')
             item_total = qty * price
             item = InvoiceItem(
@@ -1058,7 +1117,10 @@ def invoice_add():
             db.session.add(item)
             total += item_total
         inv.total = total
-        discount = float(request.form.get('discount', 0) or 0)
+        try:
+            discount = float(request.form.get('discount', 0) or 0)
+        except (TypeError, ValueError):
+            discount = 0
         inv.discount = discount
         net = max(0, total - discount)
 
@@ -1085,9 +1147,9 @@ def invoice_add():
             inv.remaining = max(0, net - down)
             inv.balance_after = max(0, prev_due + net - down)
         elif payment_type == 'installment':
-            down = float(request.form.get('down_payment', 0) or 0)
+            down = min(float(request.form.get('down_payment', 0) or 0), net)
             inv.paid_amount = down
-            inv.remaining = net - down
+            inv.remaining = max(0, net - down)
             inv.balance_after = max(0, prev_due + net - down)
 
             count = int(request.form.get('installment_count', 1) or 1)
@@ -1152,10 +1214,38 @@ def invoice_edit(invoice_id):
         inv.customer_id = int(request.form['customer_id'])
         inv.shipping_company = request.form.get('shipping_company', '')
         inv.show_balance = bool(request.form.get('show_balance'))
-        if inv.payment_type in ('cash', 'installment'):
+
+        # التحقق: لا يُسمح بصنف له كمية بدون سعر
+        no_price_items = []
+        indices_ = sorted({int(k.rsplit('_', 1)[1]) for k in request.form if k.startswith('item_name_')})
+        for i in indices_:
+            iname = request.form.get(f'item_name_{i}', '').strip()
+            if not iname:
+                continue
+            try:
+                qty = float(request.form.get(f'item_qty_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                qty = 0
+            try:
+                price = float(request.form.get(f'item_price_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                price = 0
+            if qty > 0 and price <= 0:
+                no_price_items.append(iname)
+        if no_price_items:
+            flash('لا يمكن حفظ الفاتورة: يوجد منتج بدون سعر (' + '، '.join(no_price_items) + ')', 'danger')
+            return render_template('invoice_form.html',
+                customers=customers, invoice=inv, no_price=no_price_items,
+                PAYMENT_TYPES=PAYMENT_TYPES)
+
+        old_ptype = inv.payment_type
+        inv.payment_type = request.form.get('payment_type', old_ptype or 'cash')
+        new_ptype = inv.payment_type
+        if new_ptype in ('cash', 'installment'):
             inv.payment_method = request.form.get('payment_method', 'cash')
         else:
             inv.payment_method = 'cash'
+
         new_images = save_receipt_images(request.files.getlist('receipt_images'))
         if new_images != '[]':
             existing = parse_images(inv.receipt_image)
@@ -1170,8 +1260,16 @@ def invoice_edit(invoice_id):
             iname = request.form.get(f'item_name_{i}', '').strip()
             if not iname:
                 continue
-            qty = float(request.form.get(f'item_qty_{i}', 0))
-            price = float(request.form.get(f'item_price_{i}', 0))
+            try:
+                qty = float(request.form.get(f'item_qty_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                qty = 0
+            try:
+                price = float(request.form.get(f'item_price_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                price = 0
+            if qty <= 0:
+                continue
             unit_type = request.form.get(f'item_unit_{i}', 'ق')
             item_total = qty * price
             item = InvoiceItem(
@@ -1185,25 +1283,31 @@ def invoice_edit(invoice_id):
             db.session.add(item)
             total += item_total
         inv.total = total
-        discount = float(request.form.get('discount', 0) or 0)
+        try:
+            discount = float(request.form.get('discount', 0) or 0)
+        except (TypeError, ValueError):
+            discount = 0
         inv.discount = discount
         net = max(0, total - discount)
 
-        payments_total = db.session.query(
-            db.func.coalesce(db.func.sum(Payment.amount), 0)
-        ).filter(Payment.invoice_id == inv.id).scalar()
+        down_val = 0
+        if new_ptype in ('credit', 'installment'):
+            try:
+                down_val = float(request.form.get('down_payment', 0) or 0)
+            except (TypeError, ValueError):
+                down_val = 0
 
-        # الآجل: السماح بتعديل المقدم النقدي (down_payment)
-        if inv.payment_type == 'credit':
-            want_down = min(float(request.form.get('down_payment', 0) or 0), net)
-            paid = payments_total
-            # المقدم الجديد يمكن أن يزيد/ينقص المبلغ المدفوع فوراً المسجل
+        if new_ptype == 'cash':
+            inv.paid_amount = net
+            inv.remaining = 0
+        elif new_ptype == 'credit':
+            want_down = min(down_val, net)
             inv.paid_amount = want_down
-            inv.remaining = max(0, net - want_down - paid)
-
-        # paid_amount يظل الدفعة الفورية عند الإنشاء؛ المدفوع الباقي محسوب من سجلات الدفعات
-        else:
-            inv.remaining = max(0, net - (inv.paid_amount or 0) - payments_total)
+            inv.remaining = max(0, net - want_down)
+        elif new_ptype == 'installment':
+            want_down = min(down_val, net)
+            inv.paid_amount = want_down
+            inv.remaining = max(0, net - want_down)
 
         # اعادة حساب اللقطة التراكمية الثابتة عند التعديل
         # حفظ previous_due الحالي (الثابت) وبناء balance_after عليه
@@ -1215,12 +1319,13 @@ def invoice_edit(invoice_id):
             ).order_by(Invoice.id.desc()).first()
             cur_prev = (prev_inv_edit.balance_after if prev_inv_edit and prev_inv_edit.balance_after else 0) or 0
         inv.previous_due = max(0, cur_prev)
-        inv.balance_after = max(0, round((inv.previous_due or 0) + net - (inv.paid_amount or 0) - payments_total, 2))
+        # مستحقات الفاتورة قيمة ثابتة = المستحق السابق + قيمة الفاتورة - مقدم الدفع
+        inv.balance_after = max(0, round((inv.previous_due or 0) + net - (inv.paid_amount or 0), 2))
 
-        if inv.payment_type == 'installment':
+        if new_ptype == 'installment':
             plan = InstallmentPlan.query.filter_by(invoice_id=inv.id).first()
             if plan:
-                down = float(request.form.get('down_payment', 0) or 0)
+                down = min(float(request.form.get('down_payment', 0) or 0), net)
                 count = int(request.form.get('installment_count', 1) or 1)
                 start_str = request.form.get('installment_start_date', '')
                 start_date = datetime.strptime(start_str, '%Y-%m-%d').date() if start_str else date.today()
@@ -1247,6 +1352,46 @@ def invoice_edit(invoice_id):
                         status='pending'
                     )
                     db.session.add(inst)
+            else:
+                down = min(float(request.form.get('down_payment', 0) or 0), net)
+                count = int(request.form.get('installment_count', 1) or 1)
+                start_str = request.form.get('installment_start_date', '')
+                start_date = datetime.strptime(start_str, '%Y-%m-%d').date() if start_str else date.today()
+                remaining_amount = net - down
+                inst_amount = round(remaining_amount / count, 2) if count > 0 else remaining_amount
+                plan = InstallmentPlan(
+                    customer_id=inv.customer_id,
+                    invoice_id=inv.id,
+                    plan_number=generate_plan_number(),
+                    total_amount=net,
+                    down_payment=down,
+                    installment_count=count,
+                    installment_amount=inst_amount,
+                    remaining=remaining_amount,
+                    start_date=start_date,
+                    status='active',
+                    notes=inv.notes
+                )
+                db.session.add(plan)
+                db.session.flush()
+                for j in range(count):
+                    inst_date = start_date + relativedelta(months=j)
+                    inst = Installment(
+                        plan_id=plan.id,
+                        number=j + 1,
+                        amount=inst_amount,
+                        due_date=inst_date,
+                        status='pending'
+                    )
+                    db.session.add(inst)
+        else:
+            # التحويل من تقسيط إلى نقدي/آجل: حذف خطة التقسيط ان وجدت
+            # (حتى لا تبقى خطة مكررة تضاعف الحساب او تُنشئ حركة خاطئة)
+            plan = InstallmentPlan.query.filter_by(invoice_id=inv.id).first()
+            if plan:
+                InstallmentPayment.query.filter_by(plan_id=plan.id).delete()
+                Installment.query.filter_by(plan_id=plan.id).delete()
+                db.session.delete(plan)
 
         db.session.commit()
         flash(f'تم تعديل الفاتورة {inv.invoice_number} بنجاح', 'success')
@@ -1268,44 +1413,23 @@ def invoice_view(invoice_id):
     installment_plan = InstallmentPlan.query.filter_by(invoice_id=inv.id).first()
     installments = installment_plan.installments if installment_plan else []
     installment_payments = installment_plan.payments if installment_plan else []
-    cust_id = inv.customer_id
-    cust_balance_invs = Invoice.query.filter(Invoice.customer_id == cust_id).all()
-    # استعلام مجمّع واحد لمدفوعات كل فواتير العميل
-    bal_ids = [bi.id for bi in cust_balance_invs]
-    paid_map = dict(db.session.query(
-        Payment.invoice_id,
-        func.coalesce(func.sum(Payment.amount), 0)
-    ).filter(Payment.invoice_id.in_(bal_ids)).group_by(Payment.invoice_id).all()) if bal_ids else {}
-    cust_balance_total = 0
-    cust_balance_list = []
-    this_inv_rem = 0
-    for bi in cust_balance_invs:
-        paid_for_inv = paid_map.get(bi.id, 0) or 0
-        net = max(0, (bi.total or 0) - (bi.discount or 0))
-        rem = max(0, net - paid_for_inv)
-        if bi.id == inv.id:
-            this_inv_rem = rem
-        if rem > 0:
-            cust_balance_total += rem
-            cust_balance_list.append({
-                'number': bi.invoice_number, 'total': net,
-                'paid': paid_for_inv, 'remaining': rem
-            })
+    cust = inv.customer
+    # سجل دفعات العميل الكامل (حساب تراكمي) لعرضه أسفل الفاتورة
+    customer_payments = Payment.query.filter(Payment.customer_id == cust.id).order_by(Payment.date).all()
+    cust_total_paid = cust.total_paid()
+    cust_balance = cust.balance()
     # للمستحقات المعروضة في الفاتورة نستخدم اللقطة الثابتة المحفوظة وقت الانشاء
     # وليس الحساب العام الحالي — حتى لا تتغير الفواتير القديمة
     prev_saved = inv.previous_due if inv.previous_due is not None else 0
     after_saved = inv.balance_after if inv.balance_after is not None else 0
-    # fallback للفواتير القديمة التي انشئت قبل هذه الميزة
-    if prev_saved == 0 and after_saved == 0 and cust_balance_total > 0:
-        prev_saved = max(0, round(cust_balance_total - this_inv_rem, 2))
-        after_saved = max(0, round(cust_balance_total, 2))
     return render_template('invoice_view.html', invoice=inv,
         return_items=return_items, return_amount=return_amount,
         installment_plan=installment_plan, installments=installments,
         installment_payments=installment_payments, PAYMENT_TYPES=PAYMENT_TYPES,
-        cust_balance_total=cust_balance_total, cust_balance_list=cust_balance_list,
         previous_dues=max(0, prev_saved), balance_after=max(0, after_saved),
-        invoice_payments=inv.payments)
+        customer_payments=customer_payments,
+        cust_total_paid=round(cust_total_paid, 2),
+        cust_balance=round(cust_balance, 2))
 
 
 @app.route('/invoices/<int:invoice_id>/delete', methods=['POST'])
@@ -1351,11 +1475,6 @@ def invoice_image_delete(invoice_id, idx):
 @login_required
 def payment_add(customer_id):
     c = Customer.query.get_or_404(customer_id)
-    unpaid_invoices = Invoice.query.filter(
-        Invoice.customer_id == c.id,
-        Invoice.is_returned == False,
-        Invoice.remaining > 0
-    ).all()
     if request.method == 'POST':
         amount_str = request.form.get('amount', '')
         try:
@@ -1364,11 +1483,12 @@ def payment_add(customer_id):
         except (ValueError, AssertionError):
             flash('يجب ادخال مبلغ صحيح', 'danger')
             return redirect(url_for('payment_add', customer_id=c.id))
-        invoice_id = None
+        # الدفعة حركة مالية على حساب العميل التراكمي بالكامل.
+        # لا تُربط بفاتورة محددة ولا تُعدّل مستحقات أي فاتورة تاريخية.
         p = Payment(
             customer_id=c.id,
             amount=amount,
-            invoice_id=invoice_id,
+            invoice_id=None,
             notes=request.form.get('notes', ''),
             payment_method=request.form.get('payment_method', 'cash'),
             receipt_image=save_receipt_images(request.files.getlist('receipt_images')),
@@ -1377,35 +1497,10 @@ def payment_add(customer_id):
             next_payment_amount=float(request.form['next_payment_amount']) if request.form.get('next_payment_amount') else None
         )
         db.session.add(p)
-
-        # الدفعة تُسجل تلقائياً على أحدث فاتورة للعميل (الطبقة التراكمية الحالية)
-        # كما اتفقنا: الحساب تراكمي، والدفعة تخصم من الاجمالي المستحق على العميل
-        # وتظهر في أحدث فاتورة موجودة وقت الدفع (الدفعة لاحقة لها)
-        latest_inv = Invoice.query.filter(
-            Invoice.customer_id == c.id,
-            Invoice.is_returned == False
-        ).order_by(Invoice.id.desc()).first()
-        if latest_inv:
-            invoice_id = latest_inv.id
-            p.invoice_id = latest_inv.id
-
-        if invoice_id:
-            inv = Invoice.query.get(invoice_id)
-            if inv:
-                # الدفعات اللاحقة تُسجل في سجلات Payment فقط (لا تُضاف لـ paid_amount
-                # الذي يمثل الدفعة الفورية عند الإنشاء) —— لتجنب الازدواج في حساب الرصيد
-                total_paid_inv = (inv.paid_amount or 0) + db.session.query(
-                    db.func.coalesce(db.func.sum(Payment.amount), 0)
-                ).filter(Payment.invoice_id == inv.id).scalar()
-                inv.remaining = max(0, (inv.total or 0) - total_paid_inv)
-                # تحديث المستحق التراكمي الثابت لهذه الفاتورة (الطبقة الحالية)
-                if inv.balance_after is not None:
-                    inv.balance_after = max(0, round((inv.balance_after or 0) - amount, 2))
-
         db.session.commit()
         flash('تم تسجيل الدفعة بنجاح', 'success')
         return redirect(url_for('customer_profile', customer_id=c.id))
-    return render_template('payment_form.html', customer=c, unpaid_invoices=unpaid_invoices, payment=None)
+    return render_template('payment_form.html', customer=c, payment=None)
 
 
 @app.route('/payments/<int:payment_id>/edit', methods=['GET', 'POST'])
@@ -1414,23 +1509,7 @@ def payment_edit(payment_id):
     p = Payment.query.get_or_404(payment_id)
     c = p.customer
 
-    unpaid_invoices = Invoice.query.filter(
-        Invoice.customer_id == c.id,
-        Invoice.is_returned == False,
-        Invoice.remaining > 0
-    ).all()
-
-    if p.invoice_id:
-        current_inv = Invoice.query.get(p.invoice_id)
-        if current_inv and current_inv.remaining <= 0:
-            unpaid_invoices.append(current_inv)
-        elif current_inv and current_inv not in unpaid_invoices:
-            unpaid_invoices.insert(0, current_inv)
-
     if request.method == 'POST':
-        old_amount = p.amount or 0
-        old_invoice_id = p.invoice_id
-
         try:
             new_amount = float(request.form.get('amount', ''))
             assert new_amount > 0
@@ -1438,23 +1517,10 @@ def payment_edit(payment_id):
             flash('يجب ادخال مبلغ صحيح', 'danger')
             return redirect(url_for('payment_edit', payment_id=p.id))
 
-        # الدفعة تبقى مرتبطة بأحدث فاتورة كانت موجودة وقت إنشائها (الطبقة التراكمية)
-        # تعديل المبلغ فقط يعيد حساب المستحق التراكمي لنفس الفاتورة
-        new_invoice_id = old_invoice_id
-
-        if old_invoice_id:
-            old_inv = Invoice.query.get(old_invoice_id)
-            if old_inv:
-                payments_total = db.session.query(
-                    db.func.coalesce(db.func.sum(Payment.amount), 0)
-                ).filter(Payment.invoice_id == old_inv.id, Payment.id != p.id).scalar()
-                # paid_amount يظل الدفعة الفورية عند الإنشاء ولا يُعاد من سجلات الدفعات
-                old_inv.remaining = max(0, (old_inv.total or 0) - (old_inv.discount or 0) - (old_inv.paid_amount or 0) - payments_total - new_amount)
-                if old_inv.balance_after is not None:
-                    old_inv.balance_after = max(0, round((old_inv.balance_after or 0) - (new_amount - old_amount), 2))
-
+        # الدفعة حركة على حساب العميل التراكمي؛ تعديل المبلغ لا يمس أي فاتورة تاريخية.
+        # لا نغير ربط invoice_id للدفعات القديمة (حارس من الازدواج في total_paid)؛
+        # الدفعات الجديدة تُنشأ دائماً بدون ربط invoice_id.
         p.amount = new_amount
-        p.invoice_id = new_invoice_id
         p.notes = request.form.get('notes', '')
         p.payment_method = request.form.get('payment_method', 'cash')
         new_receipt = save_receipt_image(request.files.get('receipt_image'))
@@ -1468,7 +1534,7 @@ def payment_edit(payment_id):
         flash('تم تعديل الدفعة بنجاح', 'success')
         return redirect(url_for('customer_profile', customer_id=c.id))
 
-    return render_template('payment_form.html', customer=c, unpaid_invoices=unpaid_invoices, payment=p)
+    return render_template('payment_form.html', customer=c, payment=p)
 
 
 @app.route('/payments/<int:payment_id>/delete', methods=['POST'])
@@ -1476,17 +1542,6 @@ def payment_edit(payment_id):
 def payment_delete(payment_id):
     p = Payment.query.get_or_404(payment_id)
     cid = p.customer_id
-
-    # تراجع كامل: إرجاع الفاتورة والمستحق التراكمي لحالتهما قبل هذه الدفعة
-    if p.invoice_id:
-        inv = Invoice.query.get(p.invoice_id)
-        if inv:
-            total_paid_inv = (inv.paid_amount or 0) + db.session.query(
-                db.func.coalesce(db.func.sum(Payment.amount), 0)
-            ).filter(Payment.invoice_id == inv.id, Payment.id != p.id).scalar()
-            inv.remaining = max(0, (inv.total or 0) - (inv.discount or 0) - total_paid_inv)
-            if inv.balance_after is not None:
-                inv.balance_after = max(0, round((inv.balance_after or 0) + (p.amount or 0), 2))
 
     # حذف صور الإيصالات المرتبطة بالدفعة
     for fname in parse_images(p.receipt_image):
@@ -1521,8 +1576,16 @@ def return_add(customer_id):
             iname = request.form.get(f'item_name_{i}', '').strip()
             if not iname:
                 continue
-            qty = float(request.form.get(f'item_qty_{i}', 0))
-            price = float(request.form.get(f'item_price_{i}', 0))
+            try:
+                qty = float(request.form.get(f'item_qty_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                qty = 0
+            try:
+                price = float(request.form.get(f'item_price_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                price = 0
+            if qty <= 0:
+                continue
             unit_type = request.form.get(f'item_unit_{i}', 'ق')
             item_total = qty * price
             ri = ReturnItem(
@@ -1536,6 +1599,10 @@ def return_add(customer_id):
             db.session.add(ri)
             total += item_total
         r.total_amount = total
+        # لقطة الرصيد قبل/بعد المرتجع: الرصيد قبل = الرصيد الحالي + قيمة المرتجع
+        bal_now = c.balance()
+        r.balance_before = bal_now + total
+        r.balance_after = bal_now
         db.session.commit()
         flash('تم تسجيل المرتجع بنجاح', 'success')
         return redirect(url_for('customer_profile', customer_id=c.id))
@@ -1559,8 +1626,16 @@ def return_edit(customer_id, return_id):
             iname = request.form.get(f'item_name_{i}', '').strip()
             if not iname:
                 continue
-            qty = float(request.form.get(f'item_qty_{i}', 0))
-            price = float(request.form.get(f'item_price_{i}', 0))
+            try:
+                qty = float(request.form.get(f'item_qty_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                qty = 0
+            try:
+                price = float(request.form.get(f'item_price_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                price = 0
+            if qty <= 0:
+                continue
             unit_type = request.form.get(f'item_unit_{i}', 'ق')
             item_total = qty * price
             ri = ReturnItem(
@@ -1574,10 +1649,157 @@ def return_edit(customer_id, return_id):
             db.session.add(ri)
             total += item_total
         r.total_amount = total
+        # لقطة الرصيد قبل/بعد المرتجع
+        r.balance_before = c.balance() + total
+        r.balance_after = c.balance()
         db.session.commit()
         flash('تم تعديل المرتجع بنجاح', 'success')
         return redirect(url_for('customer_profile', customer_id=c.id))
     return render_template('return_form.html', customer=c, invoices=invoices, ret=r)
+
+
+@app.route('/customers/<int:customer_id>/return/<int:return_id>/view')
+@login_required
+def customer_return_view(customer_id, return_id):
+    c = Customer.query.get_or_404(customer_id)
+    r = Return.query.filter_by(id=return_id, customer_id=c.id).first_or_404()
+    before = r.balance_before
+    after = r.balance_after
+    # fallback للفواتير القديمة التي لا تحمل لقطة رصيد
+    if not before and not after:
+        cust_balance = c.balance()
+        before = cust_balance + (r.total_amount or 0)
+        after = cust_balance
+    return render_template('return_view.html', customer=c, ret=r,
+                           balance_before=max(0, before or 0),
+                           balance_after=max(0, after or 0),
+                           ACCOUNT_TYPES=ACCOUNT_TYPES)
+
+
+@app.route('/suppliers/<int:supplier_id>/return', methods=['GET', 'POST'])
+@login_required
+def supplier_return_add(supplier_id):
+    s = Supplier.query.get_or_404(supplier_id)
+    purchases = Purchase.query.filter_by(supplier_id=s.id).all()
+    if request.method == 'POST':
+        r = SupplierReturn(
+            supplier_id=s.id,
+            purchase_id=int(request.form['purchase_id']) if request.form.get('purchase_id') else None,
+            reason=request.form.get('reason', '')
+        )
+        db.session.add(r)
+        db.session.flush()
+        total = 0
+        indices = sorted({int(k.rsplit('_', 1)[1]) for k in request.form if k.startswith('item_name_')})
+        for i in indices:
+            iname = request.form.get(f'item_name_{i}', '').strip()
+            if not iname:
+                continue
+            try:
+                qty = float(request.form.get(f'item_qty_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                qty = 0
+            try:
+                price = float(request.form.get(f'item_price_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                price = 0
+            if qty <= 0:
+                continue
+            unit_type = request.form.get(f'item_unit_{i}', 'ق')
+            item_total = qty * price
+            ri = SupplierReturnItem(
+                return_id=r.id,
+                item_name=iname,
+                unit_type=unit_type,
+                quantity=qty,
+                unit_price=price,
+                total=item_total
+            )
+            db.session.add(ri)
+            total += item_total
+        r.total_amount = total
+        bal_now = s.balance()
+        r.balance_before = bal_now + total
+        r.balance_after = bal_now
+        db.session.commit()
+        flash('تم تسجيل مرتجع المورد بنجاح', 'success')
+        return redirect(url_for('supplier_profile', supplier_id=s.id))
+    return render_template('supplier_return_form.html', supplier=s, purchases=purchases)
+
+
+@app.route('/suppliers/<int:supplier_id>/return/<int:return_id>/edit', methods=['GET', 'POST'])
+@login_required
+def supplier_return_edit(supplier_id, return_id):
+    s = Supplier.query.get_or_404(supplier_id)
+    r = SupplierReturn.query.filter_by(id=return_id, supplier_id=s.id).first_or_404()
+    purchases = Purchase.query.filter_by(supplier_id=s.id).all()
+    if request.method == 'POST':
+        r.purchase_id = int(request.form['purchase_id']) if request.form.get('purchase_id') else None
+        r.reason = request.form.get('reason', '')
+        SupplierReturnItem.query.filter_by(return_id=r.id).delete()
+        db.session.flush()
+        total = 0
+        indices = sorted({int(k.rsplit('_', 1)[1]) for k in request.form if k.startswith('item_name_')})
+        for i in indices:
+            iname = request.form.get(f'item_name_{i}', '').strip()
+            if not iname:
+                continue
+            try:
+                qty = float(request.form.get(f'item_qty_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                qty = 0
+            try:
+                price = float(request.form.get(f'item_price_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                price = 0
+            if qty <= 0:
+                continue
+            unit_type = request.form.get(f'item_unit_{i}', 'ق')
+            item_total = qty * price
+            ri = SupplierReturnItem(
+                return_id=r.id,
+                item_name=iname,
+                unit_type=unit_type,
+                quantity=qty,
+                unit_price=price,
+                total=item_total
+            )
+            db.session.add(ri)
+            total += item_total
+        r.total_amount = total
+        r.balance_before = s.balance() + total
+        r.balance_after = s.balance()
+        db.session.commit()
+        flash('تم تعديل مرتجع المورد بنجاح', 'success')
+        return redirect(url_for('supplier_profile', supplier_id=s.id))
+    return render_template('supplier_return_form.html', supplier=s, purchases=purchases, ret=r)
+
+
+@app.route('/suppliers/<int:supplier_id>/return/<int:return_id>/delete', methods=['POST'])
+@login_required
+def supplier_return_delete(supplier_id, return_id):
+    s = Supplier.query.get_or_404(supplier_id)
+    r = SupplierReturn.query.filter_by(id=return_id, supplier_id=s.id).first_or_404()
+    db.session.delete(r)
+    db.session.commit()
+    flash('تم حذف مرتجع المورد بنجاح', 'success')
+    return redirect(url_for('supplier_profile', supplier_id=s.id))
+
+
+@app.route('/suppliers/<int:supplier_id>/return/<int:return_id>/view')
+@login_required
+def supplier_return_view(supplier_id, return_id):
+    s = Supplier.query.get_or_404(supplier_id)
+    r = SupplierReturn.query.filter_by(id=return_id, supplier_id=s.id).first_or_404()
+    before = r.balance_before
+    after = r.balance_after
+    if not before and not after:
+        sup_balance = s.balance()
+        before = sup_balance + (r.total_amount or 0)
+        after = sup_balance
+    return render_template('supplier_return_view.html', supplier=s, ret=r,
+                           balance_before=max(0, before or 0),
+                           balance_after=max(0, after or 0))
 
 
 @app.route('/payments')
@@ -1656,16 +1878,6 @@ def installment_pay(plan_id):
             plan.status = 'completed'
         elif plan.remaining <= 0:
             plan.status = 'completed'
-
-        if plan.invoice_id:
-            inv = Invoice.query.get(plan.invoice_id)
-            if inv:
-                # لا نضيف لـ paid_amount (يمثل الدفعة الفورية عند الإنشاء)؛
-                # دفعات الأقساط مسجلة في InstallmentPayment——لتجنب الازدواج في الرصيد
-                total_paid_inv = (inv.paid_amount or 0) + db.session.query(
-                    db.func.coalesce(db.func.sum(InstallmentPayment.amount), 0)
-                ).filter(InstallmentPayment.plan_id == plan.id).scalar()
-                inv.remaining = max(0, (inv.total or 0) - total_paid_inv)
 
         db.session.commit()
         flash('تم تسجيل الدفعة بنجاح', 'success')
@@ -1760,11 +1972,25 @@ def supplier_installment_pay(plan_id):
 @login_required
 def suppliers_list():
     search = request.args.get('search', '')
+    balance_filter = request.args.get('balance', '')
+    sort = request.args.get('sort', 'name')
     query = Supplier.query
     if search:
         query = query.filter(Supplier.name.contains(search) | Supplier.phone.contains(search))
-    suppliers = query.order_by(Supplier.name).all()
-    return render_template('suppliers_list.html', suppliers=suppliers, search=search)
+    suppliers = query.all()
+    # فلاتر الرصيد الفعلية: محسوبة ديناميكياً وليس تجميلياً
+    if balance_filter == 'has':
+        suppliers = [s for s in suppliers if s.balance() > 0]
+    elif balance_filter == 'none':
+        suppliers = [s for s in suppliers if s.balance() <= 0]
+    if sort == 'balance_desc':
+        suppliers.sort(key=lambda x: x.balance(), reverse=True)
+    elif sort == 'balance_asc':
+        suppliers.sort(key=lambda x: x.balance())
+    else:
+        suppliers.sort(key=lambda x: x.name or '')
+    return render_template('suppliers_list.html', suppliers=suppliers, search=search,
+                           balance_filter=balance_filter, sort=sort)
 
 
 @app.route('/suppliers/add', methods=['GET', 'POST'])
@@ -1791,8 +2017,9 @@ def supplier_profile(supplier_id):
     purchases = Purchase.query.filter_by(supplier_id=s.id).order_by(Purchase.date.desc()).all()
     payments = SupplierPayment.query.filter_by(supplier_id=s.id).order_by(SupplierPayment.date.desc()).all()
     installment_plans = SupplierInstallmentPlan.query.filter_by(supplier_id=s.id).order_by(SupplierInstallmentPlan.date.desc()).all()
+    returns = SupplierReturn.query.filter_by(supplier_id=s.id).order_by(SupplierReturn.date.desc()).all()
     return render_template('supplier_profile.html', supplier=s,
-        purchases=purchases, payments=payments,
+        purchases=purchases, payments=payments, returns=returns,
         installment_plans=installment_plans, PAYMENT_TYPES=PAYMENT_TYPES)
 
 
@@ -1820,6 +2047,14 @@ def _supplier_statement_rows(s):
         if p.notes:
             lbl += f' ({p.notes})'
         entries.append({'date': p.date, 'label': lbl, 'debit': 0, 'credit': p.amount or 0})
+
+    for r in s.returns:
+        lbl = 'مرتجع مورد'
+        if r.purchase_id and r.purchase:
+            lbl += f' - {r.purchase.purchase_number}'
+        if r.reason:
+            lbl += f' ({r.reason})'
+        entries.append({'date': r.date, 'label': lbl, 'debit': 0, 'credit': r.total_amount or 0})
 
     for plan in s.installment_plans:
         for pay in plan.payments:
@@ -1895,6 +2130,10 @@ def supplier_delete(supplier_id):
     )).delete(synchronize_session='fetch')
     Purchase.query.filter_by(supplier_id=s.id).delete()
     SupplierPayment.query.filter_by(supplier_id=s.id).delete()
+    SupplierReturnItem.query.filter(SupplierReturnItem.return_id.in_(
+        db.session.query(SupplierReturn.id).filter_by(supplier_id=s.id)
+    )).delete(synchronize_session='fetch')
+    SupplierReturn.query.filter_by(supplier_id=s.id).delete()
     db.session.delete(s)
     db.session.commit()
     flash('تم حذف المورد بنجاح', 'success')
@@ -1920,38 +2159,57 @@ def supplier_payment_add(supplier_id):
         p = SupplierPayment(
             supplier_id=s.id,
             amount=amount,
-            purchase_id=purchase_id,
+            purchase_id=None,
             notes=request.form.get('notes', ''),
             payment_method=request.form.get('payment_method', 'cash'),
             receipt_image=save_receipt_image(request.files.get('receipt_image')),
             created_by=session.get('user_id')
         )
         db.session.add(p)
-
-        # الدفعة تُسجل تلقائياً على أحدث فاتورة شراء للمورد (الطبقة التراكمية الحالية)
-        latest_pur = Purchase.query.filter(
-            Purchase.supplier_id == s.id
-        ).order_by(Purchase.id.desc()).first()
-        if latest_pur:
-            purchase_id = latest_pur.id
-            p.purchase_id = latest_pur.id
-
-        if purchase_id:
-            pur = Purchase.query.get(purchase_id)
-            if pur:
-                # الدفعات اللاحقة تُسجل في سجلات SupplierPayment فقط؛ paid_amount يظل الدفعة الفورية
-                total_paid_pur = (pur.paid_amount or 0) + db.session.query(
-                    db.func.coalesce(db.func.sum(SupplierPayment.amount), 0)
-                ).filter(SupplierPayment.purchase_id == pur.id).scalar()
-                pur.remaining = max(0, (pur.total or 0) - total_paid_pur)
-                # تحديث المستحق التراكمي الثابت (الطبقة الحالية)
-                if pur.balance_after is not None:
-                    pur.balance_after = max(0, round((pur.balance_after or 0) - amount, 2))
-
         db.session.commit()
         flash('تم تسجيل الدفعة بنجاح', 'success')
         return redirect(url_for('supplier_profile', supplier_id=s.id))
     return render_template('supplier_payment_form.html', supplier=s, unpaid_purchases=unpaid_purchases)
+
+
+@app.route('/supplier-payments/<int:payment_id>/edit', methods=['GET', 'POST'])
+@login_required
+def supplier_payment_edit(payment_id):
+    p = SupplierPayment.query.get_or_404(payment_id)
+    s = p.supplier
+    if request.method == 'POST':
+        try:
+            new_amount = float(request.form.get('amount', ''))
+            assert new_amount > 0
+        except (ValueError, AssertionError):
+            flash('يجب ادخال مبلغ صحيح', 'danger')
+            return redirect(url_for('supplier_payment_edit', payment_id=p.id))
+        # الدفعة حركة على حساب المورد التراكمي؛ تعديل المبلغ لا يمس أي أمر شراء تاريخي.
+        p.amount = new_amount
+        p.notes = request.form.get('notes', '')
+        p.payment_method = request.form.get('payment_method', 'cash')
+        new_receipt = save_receipt_image(request.files.get('receipt_image'))
+        if new_receipt:
+            delete_receipt_image(p.receipt_image)
+            p.receipt_image = new_receipt
+        db.session.commit()
+        flash('تم تعديل الدفعة بنجاح', 'success')
+        return redirect(url_for('supplier_profile', supplier_id=s.id))
+    return render_template('supplier_payment_form.html', supplier=s, payment=p,
+                           unpaid_purchases=[])
+
+
+@app.route('/supplier-payments/<int:payment_id>/delete', methods=['POST'])
+@login_required
+def supplier_payment_delete(payment_id):
+    p = SupplierPayment.query.get_or_404(payment_id)
+    s_id = p.supplier_id
+    if p.receipt_image:
+        delete_receipt_image(p.receipt_image)
+    db.session.delete(p)
+    db.session.commit()
+    flash('تم حذف الدفعة بنجاح', 'success')
+    return redirect(url_for('supplier_profile', supplier_id=s_id))
 
 
 @app.route('/purchases')
@@ -1977,6 +2235,28 @@ def purchase_add():
     suppliers = Supplier.query.order_by(Supplier.name).all()
     if request.method == 'POST':
         payment_type = request.form.get('payment_type', 'cash')
+        # التحقق: لا يُسمح بصنف له كمية بدون سعر
+        no_price_items = []
+        indices_ = sorted({int(k.rsplit('_', 1)[1]) for k in request.form if k.startswith('item_name_')})
+        for i in indices_:
+            iname = request.form.get(f'item_name_{i}', '').strip()
+            if not iname:
+                continue
+            try:
+                qty = float(request.form.get(f'item_qty_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                qty = 0
+            try:
+                price = float(request.form.get(f'item_price_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                price = 0
+            if qty > 0 and price <= 0:
+                no_price_items.append(iname)
+        if no_price_items:
+            flash('لا يمكن حفظ امر الشراء: يوجد منتج بدون سعر (' + '، '.join(no_price_items) + ')', 'danger')
+            return render_template('purchase_form.html', suppliers=suppliers,
+                no_price=no_price_items, PAYMENT_TYPES=PAYMENT_TYPES)
+
         p = Purchase(
             purchase_number=generate_purchase_number(),
             supplier_id=int(request.form['supplier_id']),
@@ -1994,9 +2274,20 @@ def purchase_add():
             iname = request.form.get(f'item_name_{i}', '').strip()
             if not iname:
                 continue
-            qty = float(request.form.get(f'item_qty_{i}', 0))
-            price = float(request.form.get(f'item_price_{i}', 0))
-            sell_price = float(request.form.get(f'item_sell_price_{i}', 0))
+            try:
+                qty = float(request.form.get(f'item_qty_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                qty = 0
+            try:
+                price = float(request.form.get(f'item_price_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                price = 0
+            try:
+                sell_price = float(request.form.get(f'item_sell_price_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                sell_price = 0
+            if qty <= 0:
+                continue
             unit_type = request.form.get(f'item_unit_{i}', 'ق')
             item_total = qty * price
             item = PurchaseItem(
@@ -2154,9 +2445,20 @@ def purchase_edit(purchase_id):
             iname = request.form.get(f'item_name_{i}', '').strip()
             if not iname:
                 continue
-            qty = float(request.form.get(f'item_qty_{i}', 0))
-            price = float(request.form.get(f'item_price_{i}', 0))
-            sell_price = float(request.form.get(f'item_sell_price_{i}', 0))
+            try:
+                qty = float(request.form.get(f'item_qty_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                qty = 0
+            try:
+                price = float(request.form.get(f'item_price_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                price = 0
+            try:
+                sell_price = float(request.form.get(f'item_sell_price_{i}', 0) or 0)
+            except (TypeError, ValueError):
+                sell_price = 0
+            if qty <= 0:
+                continue
             unit_type = request.form.get(f'item_unit_{i}', 'ق')
             item_total = qty * price
             item = PurchaseItem(
@@ -2172,15 +2474,7 @@ def purchase_edit(purchase_id):
             total += item_total
         p.total = total
 
-        payments_total = db.session.query(
-            db.func.coalesce(db.func.sum(SupplierPayment.amount), 0)
-        ).filter(SupplierPayment.purchase_id == p.id).scalar()
         plan_existing = SupplierInstallmentPlan.query.filter_by(purchase_id=p.id).first()
-        if plan_existing:
-            inst_paid = db.session.query(
-                db.func.coalesce(db.func.sum(SupplierInstallmentPayment.amount), 0)
-            ).filter(SupplierInstallmentPayment.plan_id == plan_existing.id).scalar()
-            payments_total += inst_paid
 
         if payment_type == 'cash':
             p.paid_amount = total
@@ -2189,11 +2483,11 @@ def purchase_edit(purchase_id):
             # الآجل: السماح بتعديل المقدم النقدي للمورد
             want_down = min(float(request.form.get('down_payment', 0) or 0), total)
             p.paid_amount = want_down
-            p.remaining = max(0, total - want_down - payments_total)
+            p.remaining = max(0, total - want_down)
         elif payment_type == 'installment':
-            down = float(request.form.get('down_payment', 0) or 0)
+            down = min(float(request.form.get('down_payment', 0) or 0), total)
             p.paid_amount = down
-            p.remaining = max(0, total - down - payments_total)
+            p.remaining = max(0, total - down)
 
             count = int(request.form.get('installment_count', 1) or 1)
             start_str = request.form.get('installment_start_date', '')
@@ -2242,7 +2536,15 @@ def purchase_edit(purchase_id):
             ).order_by(Purchase.id.desc()).first()
             cur_prev = (prev_pur_edit.balance_after if prev_pur_edit and prev_pur_edit.balance_after else 0) or 0
         p.previous_due = max(0, cur_prev)
-        p.balance_after = max(0, round((p.previous_due or 0) + total - (p.paid_amount or 0) - payments_total, 2))
+        p.balance_after = max(0, round((p.previous_due or 0) + total - (p.paid_amount or 0), 2))
+
+        # التحويل من تقسيط الي نقدي/آجل: حذف خطة التقسيط ان وجدت
+        if payment_type != 'installment':
+            plan_del = SupplierInstallmentPlan.query.filter_by(purchase_id=p.id).first()
+            if plan_del:
+                SupplierInstallmentPayment.query.filter_by(plan_id=plan_del.id).delete()
+                SupplierInstallment.query.filter_by(plan_id=plan_del.id).delete()
+                db.session.delete(plan_del)
 
         db.session.commit()
         EntityLock.query.filter_by(entity_type='supplier', entity_id=p.supplier_id, user_id=session['user_id']).delete()
@@ -2286,8 +2588,8 @@ def payment_receipt(payment_id):
         party_name=c.name, party_phone=c.phone,
         amount=p.amount, pay_date=p.date,
         method_label=PAYMENT_METHODS.get(p.payment_method, 'كاش'),
-        linked_label='رقم الفاتورة',
-        linked_value=p.invoice.invoice_number if p.invoice else None,
+        linked_label=None,
+        linked_value=None,
         remaining_label='الرصيد المتبقي على العميل',
         remaining_value=c.balance(),
         notes=p.notes,
@@ -2559,28 +2861,23 @@ def api_customer_balance():
     customer_id = request.args.get('customer_id', type=int)
     if not customer_id:
         return jsonify({'total_remaining': 0, 'invoices': []})
-    invs = Invoice.query.filter(Invoice.customer_id == customer_id).all()
-    # استعلام واحد مجمّع لمدفوعات كل الفواتير بدل استعلام لكل فاتورة
-    inv_ids = [i.id for i in invs]
-    paid_map = dict(db.session.query(
-        Payment.invoice_id,
-        func.coalesce(func.sum(Payment.amount), 0)
-    ).filter(Payment.invoice_id.in_(inv_ids)).group_by(Payment.invoice_id).all()) if inv_ids else {}
+    c = Customer.query.get(customer_id)
+    if not c:
+        return jsonify({'total_remaining': 0, 'invoices': []})
     result = []
-    total = 0
-    for inv in invs:
-        paid_for_inv = paid_map.get(inv.id, 0) or 0
-        net = max(0, (inv.total or 0) - (inv.discount or 0))
-        rem = max(0, net - paid_for_inv)
-        if rem > 0:
-            total += rem
+    for inv in Invoice.query.filter(
+        Invoice.customer_id == c.id,
+        Invoice.is_returned == False
+    ).order_by(Invoice.id).all():
+        fixed_due = max(0, inv.balance_after or 0)
+        if fixed_due > 0:
             result.append({
                 'invoice_number': inv.invoice_number,
-                'total': net,
-                'paid': float(paid_for_inv),
-                'remaining': rem
+                'total': max(0, (inv.total or 0) - (inv.discount or 0)),
+                'paid': inv.paid_amount or 0,
+                'remaining': fixed_due
             })
-    return jsonify({'total_remaining': total, 'invoices': result})
+    return jsonify({'total_remaining': round(max(0, c.balance()), 2), 'invoices': result})
 
 
 @app.route('/api/dashboard-data')
@@ -2673,8 +2970,25 @@ def api_search_suppliers():
 @login_required
 def api_item_price():
     name = request.args.get('name', '').strip()
+    customer_id = request.args.get('customer_id', '').strip()
     if not name:
         return jsonify({'found': False})
+
+    # سعر مخصص حسب (العميل + الصنف): آخر سعر باعه هذا العميل لهذا الصنف
+    if customer_id and customer_id.isdigit():
+        cust_inv_item = InvoiceItem.query.join(Invoice).filter(
+            Invoice.customer_id == int(customer_id),
+            InvoiceItem.item_name == name
+        ).order_by(InvoiceItem.id.desc()).first()
+        if cust_inv_item and (cust_inv_item.unit_price or 0) > 0:
+            return jsonify({
+                'found': True,
+                'selling_price': cust_inv_item.unit_price,
+                'unit_price': cust_inv_item.unit_price,
+                'source': 'customer'
+            })
+
+    # السعر العام الافتراضي من احدث أمر شراء
     item = PurchaseItem.query.filter(
         PurchaseItem.item_name == name
     ).order_by(PurchaseItem.id.desc()).first()

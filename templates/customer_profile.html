@@ -137,8 +137,10 @@
                                 <th>التاريخ</th>
                                 <th>عدد الاصناف</th>
                                 <th>اجمالي المبلغ</th>
+                                <th>الرصيد قبل</th>
+                                <th>الرصيد بعد</th>
                                 <th>السبب</th>
-                                <th style="width:60px;"></th>
+                                <th style="width:90px;"></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -147,14 +149,17 @@
                                 <td style="font-size:0.8rem;color:var(--text-secondary);">{{ r.date.strftime('%Y-%m-%d') }}</td>
                                 <td style="font-weight:600;">{{ r.items|length }} صنف</td>
                                 <td class="text-danger" style="font-weight:700;">{{ "{:,.0f}".format(r.total_amount or 0) }} ج.م</td>
+                                <td style="font-weight:600;">{{ "{:,.0f}".format(r.balance_before or 0) }} ج.م</td>
+                                <td style="font-weight:600;">{{ "{:,.0f}".format(r.balance_after or 0) }} ج.م</td>
                                 <td style="font-size:0.82rem;">{{ r.reason or '—' }}</td>
-                                <td style="text-align:left;">
+                                <td style="text-align:left;white-space:nowrap;">
+                                    <a href="{{ url_for('customer_return_view', customer_id=customer.id, return_id=r.id) }}" class="btn btn-ghost btn-sm" title="عرض وطباعة المرتجع"><i class="fas fa-print" style="color:var(--navy);"></i></a>
                                     <a href="{{ url_for('return_edit', customer_id=customer.id, return_id=r.id) }}" class="btn btn-ghost btn-sm" title="تعديل المرتجع"><i class="fas fa-edit" style="color:var(--gold);"></i></a>
                                 </td>
                             </tr>
                             {% endfor %}
                             {% if not returns %}
-                            <tr><td colspan="5" class="empty-state" style="padding:40px;"><p>لا توجد مرتجعات</p></td></tr>
+                            <tr><td colspan="7" class="empty-state" style="padding:40px;"><p>لا توجد مرتجعات</p></td></tr>
                             {% endif %}
                         </tbody>
                     </table>
