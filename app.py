@@ -1719,6 +1719,20 @@ def payment_delete(payment_id):
     return redirect(url_for('customer_profile', customer_id=cid))
 
 
+@app.route('/payments/<int:payment_id>/image-delete/<int:idx>', methods=['POST'])
+@login_required
+def payment_image_delete(payment_id, idx):
+    p = Payment.query.get_or_404(payment_id)
+    images = parse_images(p.receipt_image)
+    if 0 <= idx < len(images):
+        delete_receipt_image(images[idx])
+        images.pop(idx)
+    p.receipt_image = json.dumps(images) if images else ''
+    db.session.commit()
+    flash('تم حذف الصورة بنجاح', 'success')
+    return redirect(url_for('customer_profile', customer_id=p.customer_id))
+
+
 @app.route('/customers/<int:customer_id>/return', methods=['GET', 'POST'])
 @login_required
 def return_add(customer_id):
@@ -1847,6 +1861,17 @@ def customer_return_view(customer_id, return_id):
                            cust_total_paid=round(cust_total_paid, 2),
                            cust_balance=round(cust_balance, 2),
                            ACCOUNT_TYPES=ACCOUNT_TYPES)
+
+
+@app.route('/customers/<int:customer_id>/return/<int:return_id>/delete', methods=['POST'])
+@login_required
+def return_delete(customer_id, return_id):
+    c = Customer.query.get_or_404(customer_id)
+    r = Return.query.filter_by(id=return_id, customer_id=c.id).first_or_404()
+    db.session.delete(r)
+    db.session.commit()
+    flash('تم حذف المرتجع بنجاح', 'success')
+    return redirect(url_for('customer_profile', customer_id=c.id))
 
 
 @app.route('/suppliers/<int:supplier_id>/return', methods=['GET', 'POST'])
@@ -3297,6 +3322,27 @@ def api_invoice_items():
             'total': it.total or 0
         }
         for it in inv.items
+    ])
+
+
+@app.route('/api/purchase-items')
+@login_required
+def api_purchase_items():
+    purchase_id = request.args.get('purchase_id', '').strip()
+    if not purchase_id or not purchase_id.isdigit():
+        return jsonify([])
+    pur = db.session.get(Purchase, int(purchase_id))
+    if not pur:
+        return jsonify([])
+    return jsonify([
+        {
+            'item_name': it.item_name or '',
+            'unit_type': it.unit_type or 'ق',
+            'unit_price': it.unit_price or 0,
+            'quantity': it.quantity or 0,
+            'total': it.total or 0
+        }
+        for it in pur.items
     ])
 
 

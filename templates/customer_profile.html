@@ -102,6 +102,7 @@
                                 <th>مبلغها</th>
                                 <th></th>
                                 <th></th>
+                                <th></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -111,8 +112,18 @@
                                 <td class="text-success" style="font-weight:700;">{{ "{:,.0f}".format(p.amount or 0) }} ج.م</td>
                                 <td><span class="badge badge-gold">{{ PAYMENT_METHODS.get(p.payment_method, 'كاش') }}</span></td>
                                 <td>
-                                    {% if p.receipt_image %}
-                                    <a href="{{ url_for('static', filename='uploads/receipts/' + p.receipt_image) }}" target="_blank" title="عرض الايصال"><i class="fas fa-image" style="color:var(--gold);font-size:1rem;"></i></a>
+                                    {% set p_images = parse_images(p.receipt_image) %}
+                                    {% if p_images %}
+                                    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+                                        {% for fname in p_images %}
+                                        <div style="position:relative;width:48px;height:48px;border:1px solid var(--border);border-radius:6px;overflow:visible;display:inline-flex;align-items:center;justify-content:center;background:#fff;">
+                                            <a href="{{ url_for('static', filename='uploads/receipts/' + fname) }}" target="_blank" title="عرض الايصال" style="display:flex;align-items:center;justify-content:center;color:var(--gold);font-size:1.1rem;text-decoration:none;width:100%;height:100%;"><i class="fas fa-file-image"></i></a>
+                                            <form method="POST" action="{{ url_for('payment_image_delete', payment_id=p.id, idx=loop.index0) }}" onsubmit="return confirm('هل انت متأكد من حذف هذه الصورة؟');" style="position:absolute;top:-6px;left:-6px;margin:0;">
+                                                <button type="submit" class="btn btn-danger" style="padding:1px 6px;font-size:0.6rem;line-height:1;border-radius:50%;" title="حذف الصورة"><i class="fas fa-times"></i></button>
+                                            </form>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
                                     {% else %}—{% endif %}
                                 </td>
                                 <td style="font-size:0.82rem;">{{ p.notes or '—' }}</td>
@@ -120,11 +131,16 @@
                                 <td style="font-size:0.8rem;">{{ p.next_payment_date.strftime('%Y-%m-%d') if p.next_payment_date else '—' }}</td>
                                 <td style="font-weight:600;">{{ "{:,.0f}".format(p.next_payment_amount) if p.next_payment_amount else '—' }}</td>
                                 <td><a href="{{ url_for('payment_receipt', payment_id=p.id) }}" target="_blank" class="btn btn-sm btn-outline" title="طباعة"><i class="fas fa-print"></i></a></td>
-                                <td><a href="{{ url_for('payment_edit', payment_id=p.id) }}" class="btn btn-sm btn-outline"><i class="fas fa-edit"></i></a></td>
+                                <td><a href="{{ url_for('payment_edit', payment_id=p.id) }}" class="btn btn-sm btn-outline" title="تعديل"><i class="fas fa-edit"></i></a></td>
+                                <td>
+                                    <form method="POST" action="{{ url_for('payment_delete', payment_id=p.id) }}" style="display:inline;" onsubmit="return confirm('هل انت متاكد من حذف هذه الدفعة؟');">
+                                        <button type="submit" class="btn btn-ghost btn-sm" title="حذف"><i class="fas fa-trash" style="color:#dc2626;"></i></button>
+                                    </form>
+                                </td>
                             </tr>
                             {% endfor %}
                             {% if not payments %}
-                            <tr><td colspan="10" class="empty-state" style="padding:40px;"><p>لا توجد مدفوعات</p></td></tr>
+                            <tr><td colspan="11" class="empty-state" style="padding:40px;"><p>لا توجد مدفوعات</p></td></tr>
                             {% endif %}
                         </tbody>
                     </table>
@@ -155,6 +171,9 @@
                                 <td style="text-align:left;white-space:nowrap;">
                                     <a href="{{ url_for('customer_return_view', customer_id=customer.id, return_id=r.id) }}" class="btn btn-ghost btn-sm" title="عرض وطباعة المرتجع"><i class="fas fa-print" style="color:var(--navy);"></i></a>
                                     <a href="{{ url_for('return_edit', customer_id=customer.id, return_id=r.id) }}" class="btn btn-ghost btn-sm" title="تعديل المرتجع"><i class="fas fa-edit" style="color:var(--gold);"></i></a>
+                                    <form method="POST" action="{{ url_for('return_delete', customer_id=customer.id, return_id=r.id) }}" style="display:inline;" onsubmit="return confirm('هل انت متاكد من حذف هذا المرتجع؟');">
+                                        <button type="submit" class="btn btn-ghost btn-sm" title="حذف"><i class="fas fa-trash" style="color:#dc2626;"></i></button>
+                                    </form>
                                 </td>
                             </tr>
                             {% endfor %}

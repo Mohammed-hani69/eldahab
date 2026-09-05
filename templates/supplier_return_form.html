@@ -29,7 +29,7 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label><i class="fas fa-file-invoice" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> امر الشراء (اختياري)</label>
-                            <select name="purchase_id" class="form-control">
+                            <select name="purchase_id" class="form-control" onchange="loadPurchaseItems(this)">
                                 <option value="">-- بدون امر شراء --</option>
                                 {% for p in purchases %}
                                 <option value="{{ p.id }}" {% if ret and ret.purchase_id == p.id %}selected{% endif %}>{{ p.purchase_number }} - {{ p.date.strftime('%Y-%m-%d') }}</option>
@@ -151,9 +151,8 @@ function bindUnitToggle(input) {
     });
 }
 
-function addRow(focusField) {
+function createRowDiv() {
     rowIndex++;
-    const container = document.getElementById('itemsBody');
     const div = document.createElement('div');
     div.className = 'item-row invoice-row';
     div.dataset.index = rowIndex;
@@ -166,14 +165,81 @@ function addRow(focusField) {
         <span class="row-total">0</span>
         <button type="button" class="btn-remove" onclick="removeRow(this)">×</button>
     `;
-    container.appendChild(div);
+    return div;
+}
+
+function applyRowBindings(div) {
     bindTabNavigation(div);
     bindUnitToggle(div.querySelector('.item-unit'));
     bindArrowNav(div);
+}
+
+function addRow(focusField) {
+    const div = createRowDiv();
+    document.getElementById('itemsBody').appendChild(div);
+    applyRowBindings(div);
     if (focusField === 'name') {
         const target = div.querySelector('.item-name-input');
         if (target) { setTimeout(function() { target.focus(); }, 0); }
     }
+    calcGrandTotal();
+}
+
+function hasEnteredItems() {
+    let entered = false;
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        const name = row.querySelector('.item-name-input').value.trim();
+        const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+        const price = parseFloat(row.querySelector('.item-price').value) || 0;
+        if (name || qty > 0 || price > 0) entered = true;
+    });
+    return entered;
+}
+
+function loadPurchaseItems(select) {
+    const container = document.getElementById('itemsBody');
+    const value = select.value;
+    if (hasEnteredItems() && value !== (select.dataset.prev || '')) {
+        if (!confirm('سيتم استبدال الاصناف المدخلة باصناف امر الشراء المختار. هل تريد المتابعة؟')) {
+            select.value = select.dataset.prev || '';
+            return;
+        }
+    }
+    if (!value) {
+        if (!hasEnteredItems()) {
+            container.innerHTML = '';
+            const div = createRowDiv();
+            container.appendChild(div);
+            applyRowBindings(div);
+            renumber();
+            calcGrandTotal();
+        }
+        select.dataset.prev = '';
+        return;
+    }
+    fetch('/api/purchase-items?purchase_id=' + encodeURIComponent(value))
+        .then(r => r.json())
+        .then(items => {
+            container.innerHTML = '';
+            if (items.length === 0) {
+                const div = createRowDiv();
+                container.appendChild(div);
+                applyRowBindings(div);
+            } else {
+                items.forEach(it => {
+                    const div = createRowDiv();
+                    div.querySelector('.item-name-input').value = it.item_name;
+                    div.querySelector('.item-unit').value = it.unit_type || 'ق';
+                    div.querySelector('.item-qty').value = 0;
+                    div.querySelector('.item-price').value = it.unit_price || 0;
+                    container.appendChild(div);
+                    applyRowBindings(div);
+                });
+            }
+            renumber();
+            calcGrandTotal();
+        });
+    select.dataset.prev = value;
 }
 
 function removeRow(btn) {
