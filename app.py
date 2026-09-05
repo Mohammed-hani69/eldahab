@@ -1572,10 +1572,6 @@ def invoice_edit(invoice_id):
 @login_required
 def invoice_view(invoice_id):
     inv = Invoice.query.get_or_404(invoice_id)
-    return_items = []
-    for r in inv.returns:
-        return_items.extend(r.items)
-    return_amount = sum(r.total_amount for r in inv.returns)
     installment_plan = InstallmentPlan.query.filter_by(invoice_id=inv.id).first()
     installments = installment_plan.installments if installment_plan else []
     installment_payments = installment_plan.payments if installment_plan else []
@@ -1590,7 +1586,6 @@ def invoice_view(invoice_id):
     prev_saved = inv.previous_due if inv.previous_due is not None else 0
     after_saved = inv.balance_after if inv.balance_after is not None else 0
     return render_template('invoice_view.html', invoice=inv,
-        return_items=return_items, return_amount=return_amount,
         installment_plan=installment_plan, installments=installments,
         installment_payments=installment_payments, PAYMENT_TYPES=PAYMENT_TYPES,
         previous_dues=max(0, prev_saved), balance_after=max(0, after_saved),

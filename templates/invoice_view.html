@@ -110,38 +110,6 @@
         </table>
     </div>
 
-    {% if return_items %}
-    <div style="padding:0 16px 10px;">
-        <div style="border:2px solid #dc3545;border-radius:8px;overflow:hidden;">
-            <div style="background:#dc3545;color:#fff;padding:8px 12px;font-weight:800;font-size:0.82rem;"><i class="fas fa-undo-alt" style="margin-left:4px;"></i> المرتجعات</div>
-            <table class="compact-table">
-                <thead style="background:#dc3545;">
-                    <tr>
-                        <th style="width:40px;">#</th>
-                        <th>اسم الصنف</th>
-                        <th style="width:70px;">الكمية</th>
-                        <th style="width:50px;">الفئة</th>
-                        <th style="width:100px;">سعر الوحدة</th>
-                        <th style="width:110px;">الاجمالي</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for ritem in return_items %}
-                    <tr>
-                        <td>{{ loop.index }}</td>
-                        <td>{{ ritem.item_name }}</td>
-                        <td>{{ ritem.quantity }}</td>
-                        <td style="text-align:center;">{{ ritem.unit_type or 'ق' }}</td>
-                        <td>{{ "{:,.0f}".format(ritem.unit_price or 0) }}</td>
-                        <td style="color:#dc3545;font-weight:800;">{{ "{:,.0f}".format(ritem.total or 0) }} ج.م</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    {% endif %}
-
     <div style="padding:0 16px 14px;">
         {% set inv_net = (invoice.total or 0) - (invoice.discount or 0) %}
         {% set show_bal = invoice.show_balance and (previous_dues > 0 or balance_after > 0) %}
@@ -187,16 +155,6 @@
             </div>
             {% endif %}
         </div>
-        {% if return_amount > 0 %}
-        <div class="grand-total compact-total" style="background:linear-gradient(135deg,#ffe4e6,#fecdd3);margin-top:6px;">
-            <span class="total-label">اجمالي المرتجعات</span>
-            <span class="total-value">{{ "{:,.0f}".format(return_amount or 0) }} ج.م</span>
-        </div>
-        <div class="grand-total compact-total" style="background:linear-gradient(135deg,#eef2f7,#e5eaf2);margin-top:6px;">
-            <span class="total-label">الصافي النهائي</span>
-            <span class="total-value">{{ "{:,.0f}".format((invoice.total or 0) - (invoice.discount or 0) - return_amount or 0) }} ج.م</span>
-        </div>
-        {% endif %}
     </div>
 
     {% if installment_plan %}
