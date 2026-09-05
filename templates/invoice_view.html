@@ -232,7 +232,11 @@
     {% if customer_payments %}
     <div style="padding:0 16px 14px;">
         <div style="border:2px solid rgba(16,185,129,0.35);border-radius:8px;overflow:hidden;">
-            <div style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:8px 12px;font-weight:800;font-size:0.82rem;"><i class="fas fa-money-bill-wave" style="margin-left:4px;"></i> سجل دفعات العميل (الحساب التراكمي)</div>
+            <div style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:8px 12px;font-weight:800;font-size:0.82rem;"><i class="fas fa-money-bill-wave" style="margin-left:4px;"></i> دفعات العميل خلال هذه الفترة</div>
+            <div style="padding:6px 12px;font-size:0.75rem;color:var(--text-secondary);background:var(--info-bg);border-bottom:1px solid #d3dce8;">
+                تُعرض هنا الدفعات المسجلة بعد انشاء هذه الفاتورة وحتى انشاء الفاتورة التالية فقط،
+                وتُخصم من اجمالي المستحق على العميل ولا تُعتبر بالضرورة سداداً لهذه الفاتورة.
+            </div>
             <table class="compact-table">
                 <thead>
                     <tr>
@@ -259,10 +263,10 @@
                         <td colspan="5" style="border-top:2px solid #e5e7eb;">
                             <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;">
                                 <div style="font-weight:800;font-size:0.85rem;color:#059669;">
-                                    <i class="fas fa-receipt" style="margin-left:4px;"></i> اجمالي الدفعات: {{ "{:,.0f}".format(cust_total_paid) }} ج.م
+                                    <i class="fas fa-receipt" style="margin-left:4px;"></i> اجمالي دفعات هذه الفترة: {{ "{:,.0f}".format(cust_total_paid) }} ج.م
                                 </div>
                                 <div style="font-weight:800;font-size:0.85rem;color:#dc2626;">
-                                    المتبقي من حساب العميل: {{ "{:,.0f}".format(cust_balance) }} ج.م
+                                    المتبقي الكلي من حساب العميل: {{ "{:,.0f}".format(cust_balance) }} ج.م
                                     <i class="fas fa-exclamation-circle" style="margin-right:4px;"></i>
                                 </div>
                             </div>

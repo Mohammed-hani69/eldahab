@@ -2,7 +2,7 @@
 {% block content %}
 
 <div class="page-header">
-    <h1 style="font-size:1.3rem;font-weight:700;color:var(--text);margin:0;">مرتجع فاتورة #{{ ret.id }}</h1>
+    <h1 style="font-size:1.3rem;font-weight:700;color:var(--text);">مرتجع فاتورة #{{ ret.id }}</h1>
     <div style="display:flex;gap:8px;">
         <a href="{{ url_for('customer_profile', customer_id=customer.id) }}" class="btn btn-outline"><i class="fas fa-arrow-right"></i> رجوع للملف</a>
         <button class="btn btn-gold" onclick="window.print();"><i class="fas fa-print"></i> طباعة</button>
@@ -10,76 +10,410 @@
 </div>
 
 <div class="invoice-print" id="printArea">
-    <div class="invoice-print-header">
+    <div class="invoice-print-header compact-header">
         <div>
-            <div class="company-name">El Dahab Trading</div>
-            <div style="font-size:0.95rem;font-weight:700;margin-top:2px;">مرتجع فاتورة</div>
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="compact-logo">
         </div>
-        <div style="text-align:left;">
-            <div style="font-size:1.2rem;font-weight:900;color:var(--gold);">مرتجع #{{ ret.id }}</div>
-            <div style="font-size:0.8rem;color:rgba(255,255,255,0.85);">{{ ret.date.strftime('%Y-%m-%d') }}</div>
+        <div style="text-align:center;">
+            <div class="company-name">El Dahab Trading</div>
+            <div style="font-size:0.95rem;font-weight:700;color:var(--navy);margin-top:2px;">مرتجع فاتورة</div>
+        </div>
+        <div style="text-align:left;display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+            <div style="font-size:1.2rem;font-weight:900;color:var(--gold-dark);">مرتجع #{{ ret.id }}</div>
+            <svg id="invoiceBarcode" style="max-width:140px;height:30px;"></svg>
+        </div>
+    </div>
+    <div class="invoice-info compact-info">
+        <div><strong>العميل:</strong> {{ customer.name }}</div>
+        <div><strong>الهاتف:</strong> {{ customer.phone or '—' }}</div>
+        <div><strong>نوع الحساب:</strong> {{ ACCOUNT_TYPES.get(customer.account_type, customer.account_type or '—') }}</div>
+        <div><strong>التاريخ:</strong> {{ ret.date.strftime('%Y-%m-%d') }}</div>
+    </div>
+    <div class="invoice-meta-row">
+        <div class="compact-payment-bar" style="border-bottom:none;flex:1;">
+            <span style="font-size:0.78rem;color:var(--text-secondary);">نوع المستند:</span>
+            <span class="badge badge-danger"><i class="fas fa-undo-alt" style="margin-left:2px;"></i> مرتجع</span>
             {% if ret.invoice %}
-            <div style="font-size:0.8rem;color:rgba(255,255,255,0.85);">الفاتورة: {{ ret.invoice.invoice_number }}</div>
+            <span style="font-size:0.78rem;color:var(--text-secondary);">| الفاتورة الأصلية:</span>
+            <span class="badge badge-warning" style="background:rgba(245,158,11,0.12);color:#b45309;"><i class="fas fa-file-invoice" style="margin-left:2px;"></i> {{ ret.invoice.invoice_number }}</span>
+            {% endif %}
+        </div>
+        <div class="accountant-box">
+            {% set shown_name = (ret.modifier.full_name or ret.modifier.username) if ret.modifier else ((ret.creator.full_name or ret.creator.username) if ret.creator else '—') %}
+            <span class="accountant-label">المحاسب</span>
+            <span class="accountant-name">{{ shown_name }}</span>
+            {% if ret.modifier and ret.creator and ret.modifier.id != ret.creator.id %}
+            <span class="accountant-moditag">(عدّل)</span>
             {% endif %}
         </div>
     </div>
-    <div class="invoice-info">
-        <div><strong>العميل:</strong> {{ customer.name }}</div>
-        <div><strong>الهاتف:</strong> {{ customer.phone or '—' }}</div>
-        {% if customer.account_type %}
-        <div><strong>نوع الحساب:</strong> {{ ACCOUNT_TYPES.get(customer.account_type, customer.account_type) }}</div>
-        {% endif %}
-        <div><strong>اجمالي المرتجع:</strong> {{ "{:,.0f}".format(ret.total_amount or 0) }} ج.م</div>
-    </div>
 
     <div class="invoice-items-area">
-        <table class="compact-table">
+        <table class="compact-table invoice-items-table">
             <thead>
                 <tr>
-                    <th>#</th>
+                    <th style="width:50px;">#</th>
                     <th>اسم الصنف</th>
-                    <th>الفئة</th>
-                    <th>الكمية</th>
-                    <th>سعر الوحدة</th>
-                    <th>الاجمالي</th>
+                    <th style="width:90px;">الكمية</th>
+                    <th style="width:60px;">الفئة</th>
+                    <th style="width:130px;">سعر الوحدة</th>
+                    <th style="width:140px;">الاجمالي</th>
                 </tr>
             </thead>
             <tbody>
-                {% for it in ret.items %}
-                <tr>
-                    <td>{{ loop.index }}</td>
-                    <td style="font-weight:700;">{{ it.item_name }}</td>
-                    <td style="text-align:center;">{{ it.unit_type or 'ق' }}</td>
-                    <td style="text-align:center;">{{ it.quantity }}</td>
-                    <td>{{ "{:,.0f}".format(it.unit_price or 0) }}</td>
-                    <td style="font-weight:800;">{{ "{:,.0f}".format(it.total or 0) }} ج.م</td>
+                {% for item in ret.items %}
+                <tr class="{% if loop.index % 20 == 0 and not loop.last %}page-break-row{% endif %}">
+                    <td class="item-cell">{{ loop.index }}</td>
+                    <td class="item-cell" style="font-weight:700;">{{ item.item_name }}</td>
+                    <td class="item-cell" style="text-align:center;">{{ item.quantity }}</td>
+                    <td class="item-cell" style="text-align:center;">{{ item.unit_type or 'ق' }}</td>
+                    <td class="item-cell">{{ "{:,.0f}".format(item.unit_price or 0) }}</td>
+                    <td class="item-cell" style="font-weight:800;">{{ "{:,.0f}".format(item.total or 0) }} ج.م</td>
                 </tr>
                 {% endfor %}
+                {% if not ret.items %}
+                <tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">لا توجد اصناف</td></tr>
+                {% endif %}
+                {% if ret.items|length > 0 %}
+                <tr class="invoice-page-footer">
+                    <td colspan="6">
+                        <div class="page-footer-inner">
+                            <span>صفحة 1</span>
+                            <span>مرتجع #{{ ret.id }} - El Dahab Trading</span>
+                            <span>{{ ret.items|length }} صنف</span>
+                        </div>
+                    </td>
+                </tr>
+                {% endif %}
             </tbody>
         </table>
     </div>
 
-    <div style="padding:14px 16px;">
-        <div class="totals-row">
-            <div class="grand-total compact-total total-box total-dues">
-                <span class="total-label">الرصيد قبل المرتجع</span>
-                <span class="total-value">{{ "{:,.0f}".format(balance_before or 0) }} ج.م</span>
-            </div>
-            <div class="grand-total compact-total total-box total-grand">
-                <span class="total-label">الرصيد بعد المرتجع</span>
-                <span class="total-value">{{ "{:,.0f}".format(balance_after or 0) }} ج.م</span>
-            </div>
-        </div>
+    <div style="padding:0 16px 14px;">
         {% if ret.reason %}
-        <div class="invoice-notes" style="margin-top:10px;">
+        <div class="invoice-notes">
             <span class="notes-label"><i class="fas fa-comment-dots" style="margin-left:4px;"></i> سبب المرتجع:</span>
             <span class="notes-text">{{ ret.reason }}</span>
         </div>
         {% endif %}
+
+        <div class="totals-row">
+            <div class="grand-total compact-total total-box total-dues">
+                <span class="total-label"><i class="fas fa-clock-rotate-left" style="margin-left:4px;"></i> الرصيد قبل المرتجع</span>
+                <span class="total-value">{{ "{:,.0f}".format(balance_before or 0) }} ج.م</span>
+            </div>
+            <div class="grand-total compact-total total-box total-invoice">
+                <span class="total-label">إجمالي المرتجع</span>
+                <span class="total-value">{{ "{:,.0f}".format(ret.total_amount or 0) }} ج.م</span>
+            </div>
+            <div class="grand-total compact-total total-box total-grand">
+                <span class="total-label"><i class="fas fa-exclamation-triangle" style="margin-left:4px;"></i> الرصيد بعد المرتجع</span>
+                <span class="total-value">{{ "{:,.0f}".format(balance_after or 0) }} ج.م</span>
+            </div>
+        </div>
     </div>
+
+    {% if customer_payments %}
+    <div style="padding:0 16px 14px;">
+        <div style="border:2px solid rgba(16,185,129,0.35);border-radius:8px;overflow:hidden;">
+            <div style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:8px 12px;font-weight:800;font-size:0.82rem;"><i class="fas fa-money-bill-wave" style="margin-left:4px;"></i> دفعات العميل خلال هذه الفترة</div>
+            <div style="padding:6px 12px;font-size:0.75rem;color:var(--text-secondary);background:var(--info-bg);border-bottom:1px solid #d3dce8;">
+                تُعرض هنا الدفعات المسجلة بعد انشاء هذا المرتجع وحتى انشاء الفاتورة التالية فقط،
+                وتُخصم من اجمالي المستحق على العميل ولا تُعتبر بالضرورة سداداً لهذا المرتجع.
+            </div>
+            <table class="compact-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>التاريخ</th>
+                        <th>المبلغ</th>
+                        <th>طريقة الدفع</th>
+                        <th>ملاحظات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for p in customer_payments %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ p.date.strftime('%Y-%m-%d') }}</td>
+                        <td style="font-weight:700;color:#059669;">{{ "{:,.0f}".format(p.amount or 0) }} ج.م</td>
+                        <td>{{ PAYMENT_METHODS.get(p.payment_method) or 'كاش' }}</td>
+                        <td>{{ p.notes or '—' }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="5" style="border-top:2px solid #e5e7eb;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;">
+                                <div style="font-weight:800;font-size:0.85rem;color:#059669;">
+                                    <i class="fas fa-receipt" style="margin-left:4px;"></i> اجمالي دفعات هذه الفترة: {{ "{:,.0f}".format(cust_total_paid) }} ج.م
+                                </div>
+                                <div style="font-weight:800;font-size:0.85rem;color:#dc2626;">
+                                    المتبقي الكلي من حساب العميل: {{ "{:,.0f}".format(cust_balance) }} ج.م
+                                    <i class="fas fa-exclamation-circle" style="margin-right:4px;"></i>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+    {% endif %}
 </div>
 
-<div style="margin-top:20px;" class="no-print">
-    <a href="{{ url_for('customer_return_view', customer_id=customer.id, return_id=ret.id) }}" class="btn btn-outline"><i class="fas fa-sync"></i> تحديث</a>
+<div style="margin-top:20px;display:flex;gap:12px;" class="no-print">
+    <button class="btn btn-gold btn-lg" onclick="window.print();"><i class="fas fa-print"></i> طباعة</button>
+    <a href="{{ url_for('return_edit', customer_id=customer.id, return_id=ret.id) }}" class="btn btn-outline btn-lg"><i class="fas fa-edit"></i> تعديل</a>
+    <a href="{{ url_for('customer_profile', customer_id=customer.id) }}" class="btn btn-outline btn-lg"><i class="fas fa-arrow-right"></i> رجوع للملف</a>
 </div>
+
+<style>
+.invoice-print { background: #fff; border: 1px solid #dde3ec; }
+.invoice-print .compact-header {
+    background: linear-gradient(135deg, #f8fafc, #eef2f8);
+    border-bottom: 2px solid var(--gold);
+    color: var(--text);
+}
+.invoice-print .compact-header .company-name { color: #1a365b; }
+.invoice-meta-row { border-bottom: 1px solid #e6eaf2; }
+.compact-header { padding: 14px 16px; }
+.compact-logo { width: 36px; height: 36px; border-radius: 8px; }
+.compact-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 16px;
+    padding: 8px 16px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+}
+.compact-info div { font-size: 0.78rem !important; padding: 2px 0; }
+.compact-info strong { color: var(--text); }
+.compact-payment-bar {
+    padding: 6px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.compact-table { width: 100%; border-collapse: collapse; }
+.compact-table thead th {
+    background: #eef2f7;
+    color: #1a365b;
+    padding: 9px 12px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-align: right;
+    white-space: nowrap;
+    border: 1px solid #d3dce8;
+}
+.compact-table tbody td {
+    padding: 10px 12px;
+    border: 1px solid #c9d4e2;
+    font-size: 0.92rem;
+    line-height: 1.5;
+}
+.compact-table tbody tr { border-bottom: 1px solid #b6c2d2; }
+.compact-table tbody tr:nth-child(even) { background: #f7f9fc; }
+.compact-table tbody tr:hover { background: rgba(207,163,64,0.06); }
+
+.invoice-items-table .item-cell {
+    font-size: 0.95rem;
+    padding: 9px 12px;
+}
+
+.invoice-meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+    padding: 0 16px;
+}
+.accountant-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--gold-glow);
+    border: 1px solid rgba(207,163,64,0.4);
+    border-radius: 8px;
+    padding: 6px 12px;
+    white-space: nowrap;
+}
+.accountant-label { font-size: 0.75rem; color: var(--text-secondary); }
+.accountant-name { font-size: 0.95rem; font-weight: 800; color: var(--navy); }
+.accountant-moditag {
+    font-size: 0.68rem; font-weight: 700; color: #fff;
+    background: var(--danger); border-radius: 6px; padding: 2px 7px;
+}
+
+.invoice-notes {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-right: 4px solid var(--gold);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 10px;
+}
+.invoice-notes .notes-label {
+    font-size: 0.8rem; font-weight: 800; color: #7a5d1e; white-space: nowrap;
+}
+.invoice-notes .notes-text {
+    font-size: 0.92rem; color: #57451a; line-height: 1.7; flex: 1;
+}
+
+.totals-row {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+    flex-wrap: wrap;
+}
+.total-box { flex: 1; min-width: 180px; margin-top: 6px; }
+.total-dues { background: linear-gradient(135deg, #e5e7eb, #d1d5db); }
+.total-invoice { background: linear-gradient(135deg, #e0e7ff, #c7d2fe); }
+.total-paid { background: linear-gradient(135deg, #d1fae5, #a7f3d0); }
+.total-grand { background: linear-gradient(135deg, #ffe4e6, #fecdd3); }
+.compact-total .total-label { color: #374151 !important; font-weight: 800; }
+.compact-total .total-value { color: #111827 !important; }
+
+.compact-total { padding: 12px 16px; }
+.compact-total .total-label { font-size: 0.88rem; color: #fff; }
+.compact-total .total-value { font-size: 1.25rem; }
+
+.invoice-items-area { border-bottom: 1px solid var(--border); }
+
+.invoice-page-footer td {
+    border-bottom: 2px solid #000 !important;
+    border-top: 1px solid #000 !important;
+}
+.page-footer-inner {
+    font-size: 0.6rem !important;
+}
+.page-footer-inner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    background: var(--bg);
+}
+
+.page-break-row {
+    border-bottom: 2px solid var(--navy) !important;
+}
+
+#invoiceBarcode { max-width: 140px; height: 30px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+@media print {
+    @page { margin: 10mm; size: A4; }
+    body { margin: 0; padding: 0; background: #fff; }
+    .no-print { display: none !important; }
+    .sidebar, .mobile-topbar, .sidebar-overlay { display: none !important; }
+    .main-content { margin: 0 !important; padding: 0 !important; }
+    .content-area { padding: 0 !important; }
+
+    .invoice-print {
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        margin: 0;
+        width: 100%;
+    }
+
+    .compact-header {
+        flex-direction: row !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        gap: 12px !important;
+        padding: 8px 12px !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .compact-logo { width: 28px !important; height: 28px !important; }
+    .company-name { font-size: 1rem !important; }
+
+    #invoiceBarcode {
+        max-width: 120px !important;
+        height: 22px !important;
+        background: #1a365b !important;
+        padding: 3px 6px !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    #invoiceBarcode path { stroke: #fff !important; }
+
+    .compact-info { gap: 2px 12px; padding: 5px 12px; }
+    .compact-info div { font-size: 0.7rem !important; }
+    .compact-payment-bar { padding: 4px 12px; font-size: 0.72rem; }
+
+    .compact-table thead th {
+        padding: 6px 8px !important;
+        font-size: 0.75rem !important;
+        border: 1px solid #0f2540 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .compact-table tbody td {
+        padding: 6px 8px !important;
+        font-size: 0.85rem !important;
+        border: 1px solid #aeb9c8 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .invoice-items-table .item-cell { font-size: 0.88rem !important; }
+
+    .compact-total { padding: 8px 12px !important; }
+    .compact-total .total-label { font-size: 0.82rem !important; color: #fff !important; }
+    .compact-total .total-value { font-size: 1.1rem !important; }
+    .totals-row { gap: 6px !important; }
+    .total-box { min-width: 30% !important; margin-top: 4px !important; }
+    .compact-payment-bar { border-bottom: none !important; }
+
+    .invoice-meta-row { border-bottom: 1px solid #000 !important; padding: 0 12px !important; }
+    .accountant-box { background: none !important; border: 1px solid #000 !important; padding: 4px 8px !important; }
+    .accountant-label { font-size: 0.7rem !important; }
+    .accountant-name { font-size: 0.85rem !important; color: #000 !important; }
+    .accountant-moditag { background: #000 !important; }
+
+    .invoice-notes {
+        border: 1px solid #000 !important; background: none !important;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .invoice-notes .notes-label { color: #000 !important; }
+    .invoice-notes .notes-text { color: #000 !important; }
+    .total-dues, .total-invoice, .total-grand { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+    .page-break-row td { border-bottom: 2px solid #000 !important; }
+
+    .invoice-page-footer td { border-bottom: 2px solid #000 !important; }
+    .page-footer-inner {
+        font-size: 0.6rem !important;
+        border-top: 1px solid #000 !important;
+        border-bottom: none !important;
+    }
+
+    .badge {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+}
+</style>
+<script>
+JsBarcode("#invoiceBarcode", "RET-{{ '{:05d}'.format(ret.id) }}", {
+    format: "CODE128",
+    width: 1.5,
+    height: 25,
+    displayValue: false,
+    margin: 0,
+    background: "transparent",
+    lineColor: "#fff"
+});
+</script>
 {% endblock %}

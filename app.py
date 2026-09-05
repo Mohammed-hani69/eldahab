@@ -270,6 +270,10 @@ with app.app_context():
             db.session.execute(db.text("ALTER TABLE returns ADD COLUMN balance_before FLOAT DEFAULT 0"))
         if 'balance_after' not in ret_cols:
             db.session.execute(db.text("ALTER TABLE returns ADD COLUMN balance_after FLOAT DEFAULT 0"))
+        if 'created_by' not in ret_cols:
+            db.session.execute(db.text("ALTER TABLE returns ADD COLUMN created_by INTEGER"))
+        if 'modified_by' not in ret_cols:
+            db.session.execute(db.text("ALTER TABLE returns ADD COLUMN modified_by INTEGER"))
 
         db.session.execute(db.text(
             "CREATE TABLE IF NOT EXISTS supplier_returns ("
@@ -443,6 +447,166 @@ def generate_supplier_plan_number():
     last = SupplierInstallmentPlan.query.order_by(SupplierInstallmentPlan.id.desc()).first()
     num = (last.id + 1) if last else 1
     return f"SINST-{num:06d}"
+
+
+def _customer_balance_before(customer_id, before_date, exclude_id=None):
+    """المستحق الفعلي على العميل قبل تاريخ معين (قبل اضافة فاتورة جديدة).
+
+    يعيد نفس منهج حساب رصيد العميل في البروفايل (total_invoiced - total_paid
+    - total_returns) مع قصر الحساب على الحركات التي حدثت قبل before_date فقط،
+    حتى تكون قيمة 'آخر المستحقات' المسجلة في الفاتورة مساوية لرصيد البروفايل
+    قبل اضافة اجمالي الفاتورة الحالية.
+    """
+    invs = Invoice.query.filter(
+        Invoice.customer_id == customer_id,
+        Invoice.id != exclude_id,
+        Invoice.date < before_date
+    ).all()
+    total_invoiced = sum(
+        (i.total or 0) - (i.discount or 0)
+        for i in invs if not i.is_returned
+    )
+    paid_invoice_ids = {p.invoice_id for p in Payment.query.filter(
+        Payment.customer_id == customer_id,
+        Payment.invoice_id.isnot(None)
+    ).all()}
+    sum_inv_paid = sum(
+        (i.paid_amount or 0)
+        for i in invs
+        if not i.is_returned and i.id not in paid_invoice_ids
+    )
+    sum_payments = sum(
+        p.amount or 0
+        for p in Payment.query.filter(
+            Payment.customer_id == customer_id,
+            Payment.date < before_date
+        ).all()
+    )
+    plan_ids = [pl.id for pl in InstallmentPlan.query.filter(
+        InstallmentPlan.customer_id == customer_id,
+        InstallmentPlan.date < before_date
+    ).all()]
+    sum_inst = 0
+    if plan_ids:
+        sum_inst = sum(
+            ip.amount or 0
+            for ip in InstallmentPayment.query.filter(
+                InstallmentPayment.plan_id.in_(plan_ids),
+                InstallmentPayment.date < before_date
+            ).all()
+        )
+    sum_returns = sum(
+        r.total_amount or 0
+        for r in Return.query.filter(
+            Return.customer_id == customer_id,
+            Return.date < before_date
+        ).all()
+    )
+    balance = total_invoiced - sum_payments - sum_inst - sum_inv_paid - sum_returns
+    return max(0, round(balance, 2))
+
+
+def _supplier_balance_before(supplier_id, before_date, exclude_id=None):
+    """المستحق الفعلي للمورد قبل تاريخ معين (قبل اضافة امر شراء جديد).
+
+    يعيد نفس منهج حساب رصيد المورد في البروفايل (total_purchased - total_paid
+    - total_returns) مع قصر الحساب على الحركات قبل before_date فقط.
+    """
+    purs = Purchase.query.filter(
+        Purchase.supplier_id == supplier_id,
+        Purchase.id != exclude_id,
+        Purchase.date < before_date
+    ).all()
+    total_purchased = sum(
+        p.total or 0
+        for p in purs
+    )
+    paid_purchase_ids = {pp.purchase_id for pp in SupplierPayment.query.filter(
+        SupplierPayment.supplier_id == supplier_id,
+        SupplierPayment.purchase_id.isnot(None)
+    ).all()}
+    sum_pur_paid = sum(
+        (p.paid_amount or 0)
+        for p in purs
+        if p.id not in paid_purchase_ids
+    )
+    sum_payments = sum(
+        p.amount or 0
+        for p in SupplierPayment.query.filter(
+            SupplierPayment.supplier_id == supplier_id,
+            SupplierPayment.date < before_date
+        ).all()
+    )
+    plan_ids = [pl.id for pl in SupplierInstallmentPlan.query.filter(
+        SupplierInstallmentPlan.supplier_id == supplier_id,
+        SupplierInstallmentPlan.date < before_date
+    ).all()]
+    sum_inst = 0
+    if plan_ids:
+        sum_inst = sum(
+            ip.amount or 0
+            for ip in SupplierInstallmentPayment.query.filter(
+                SupplierInstallmentPayment.plan_id.in_(plan_ids),
+                SupplierInstallmentPayment.date < before_date
+            ).all()
+        )
+    sum_returns = sum(
+        r.total_amount or 0
+        for r in SupplierReturn.query.filter(
+            SupplierReturn.supplier_id == supplier_id,
+            SupplierReturn.date < before_date
+        ).all()
+    )
+    balance = total_purchased - sum_payments - sum_inst - sum_pur_paid - sum_returns
+    return max(0, round(balance, 2))
+
+
+def _next_invoice_date(customer_id, inv_date):
+    """تاريخ انشاء الفاتورة التالية لنفس العميل (لا شيء اذا لم توجد)."""
+    nxt = Invoice.query.filter(
+        Invoice.customer_id == customer_id,
+        Invoice.date > inv_date
+    ).order_by(Invoice.date.asc(), Invoice.id.asc()).first()
+    return nxt.date if nxt else None
+
+
+def _invoice_window_payments(inv):
+    """الدفعات التي تظهر داخل الفاتورة: كل دفعة تُعرض في آخر فاتورة
+    تم انشاؤها قبل تسجيل الدفعة. أي من تاريخ انشاء الفاتورة الحالية حتى
+    انشاء الفاتورة التالية لنفس العميل (بدونها).
+    """
+    end = _next_invoice_date(inv.customer_id, inv.date)
+    q = Payment.query.filter(
+        Payment.customer_id == inv.customer_id,
+        Payment.date >= inv.date
+    )
+    if end is not None:
+        q = q.filter(Payment.date < end)
+    return q.order_by(Payment.date.asc(), Payment.id.asc()).all()
+
+
+def _next_purchase_date(supplier_id, pur_date):
+    """تاريخ انشاء امر الشراء التالي لنفس المورد (لا شيء اذا لم توجد)."""
+    nxt = Purchase.query.filter(
+        Purchase.supplier_id == supplier_id,
+        Purchase.date > pur_date
+    ).order_by(Purchase.date.asc(), Purchase.id.asc()).first()
+    return nxt.date if nxt else None
+
+
+def _purchase_window_payments(pur):
+    """الدفعات التي تظهر داخل امر الشراء: كل دفعة تُعرض في آخر امر شراء
+    تم انشاؤه قبل تسجيل الدفعة. أي من تاريخ انشاء الامر الحالي حتى انشاء
+    امر الشراء التالي لنفس المورد (بدونها).
+    """
+    end = _next_purchase_date(pur.supplier_id, pur.date)
+    q = SupplierPayment.query.filter(
+        SupplierPayment.supplier_id == pur.supplier_id,
+        SupplierPayment.date >= pur.date
+    )
+    if end is not None:
+        q = q.filter(SupplierPayment.date < end)
+    return q.order_by(SupplierPayment.date.asc(), SupplierPayment.id.asc()).all()
 
 
 @app.route('/')
@@ -1133,15 +1297,9 @@ def invoice_add():
         net = max(0, total - discount)
 
         # حساب اللقطة التراكمية الثابتة:
-        # previous_due = مستحق (balance_after) اخر فاتورة سابقة للعميل
+        # previous_due = المستحق الفعلي على العميل قبل اضافة اجمالي الفاتورة الحالية
         # balance_after = previous_due + قيمة الفاتورة - دفعات فورية (كاش/مقدم)
-        prev_inv = Invoice.query.filter(
-            Invoice.customer_id == inv.customer_id,
-            Invoice.id != inv.id
-        ).order_by(Invoice.id.desc()).first()
-        prev_due = (prev_inv.balance_after if prev_inv and prev_inv.balance_after is not None else 0) or 0
-        if prev_due < 0:
-            prev_due = 0
+        prev_due = _customer_balance_before(inv.customer_id, inv.date, exclude_id=inv.id)
         inv.previous_due = prev_due
 
         if payment_type == 'cash':
@@ -1422,9 +1580,10 @@ def invoice_view(invoice_id):
     installments = installment_plan.installments if installment_plan else []
     installment_payments = installment_plan.payments if installment_plan else []
     cust = inv.customer
-    # سجل دفعات العميل الكامل (حساب تراكمي) لعرضه أسفل الفاتورة
-    customer_payments = Payment.query.filter(Payment.customer_id == cust.id).order_by(Payment.date).all()
-    cust_total_paid = cust.total_paid()
+    # الدفعات التي تظهر داخل هذه الفاتورة فقط: كل دفعة تظهر في آخر فاتورة
+    # تم انشاؤها قبل تسجيلها (من تاريخ هذه الفاتورة حتى انشاء الفاتورة التالية)
+    customer_payments = _invoice_window_payments(inv)
+    cust_total_paid = sum(p.amount or 0 for p in customer_payments)
     cust_balance = cust.balance()
     # للمستحقات المعروضة في الفاتورة نستخدم اللقطة الثابتة المحفوظة وقت الانشاء
     # وليس الحساب العام الحالي — حتى لا تتغير الفواتير القديمة
@@ -1574,7 +1733,8 @@ def return_add(customer_id):
         r = Return(
             customer_id=c.id,
             invoice_id=int(request.form['invoice_id']) if request.form.get('invoice_id') else None,
-            reason=request.form.get('reason', '')
+            reason=request.form.get('reason', ''),
+            created_by=session.get('user_id')
         )
         db.session.add(r)
         db.session.flush()
@@ -1626,6 +1786,7 @@ def return_edit(customer_id, return_id):
     if request.method == 'POST':
         r.invoice_id = int(request.form['invoice_id']) if request.form.get('invoice_id') else None
         r.reason = request.form.get('reason', '')
+        r.modified_by = session.get('user_id')
         ReturnItem.query.filter_by(return_id=r.id).delete()
         db.session.flush()
         total = 0
@@ -1678,9 +1839,18 @@ def customer_return_view(customer_id, return_id):
         cust_balance = c.balance()
         before = cust_balance + (r.total_amount or 0)
         after = cust_balance
+    # نفس منطق عرض دفعات فاتورة البيع: كل دفعة تُعرض في آخر مستند
+    # تم انشاؤه قبل تسجيلها — من تاريخ هذا المرتجع حتى انشاء الفاتورة
+    # التالية لنفس العميل (عرض تنظيمي فقط، ولا يُغيّر أي رصيد).
+    customer_payments = _invoice_window_payments(r)
+    cust_total_paid = sum(p.amount or 0 for p in customer_payments)
+    cust_balance = c.balance()
     return render_template('return_view.html', customer=c, ret=r,
                            balance_before=max(0, before or 0),
                            balance_after=max(0, after or 0),
+                           customer_payments=customer_payments,
+                           cust_total_paid=round(cust_total_paid, 2),
+                           cust_balance=round(cust_balance, 2),
                            ACCOUNT_TYPES=ACCOUNT_TYPES)
 
 
@@ -2318,15 +2488,9 @@ def purchase_add():
         net = max(0, total - discount)
 
         # حساب اللقطة التراكمية الثابتة (مثل فاتورة المبيعات):
-        # previous_due = مستحق (balance_after) آخر أمر شراء سابق للمورد
+        # previous_due = المستحق الفعلي للمورد قبل اضافة اجمالي امر الشراء الحالي
         # balance_after = previous_due + قيمة الفاتورة - دفعات فورية (كاش/مقدم)
-        prev_pur = Purchase.query.filter(
-            Purchase.supplier_id == p.supplier_id,
-            Purchase.id != p.id
-        ).order_by(Purchase.id.desc()).first()
-        prev_due = (prev_pur.balance_after if prev_pur and prev_pur.balance_after is not None else 0) or 0
-        if prev_due < 0:
-            prev_due = 0
+        prev_due = _supplier_balance_before(p.supplier_id, p.date, exclude_id=p.id)
         p.previous_due = prev_due
 
         if payment_type == 'cash':
@@ -2408,10 +2572,10 @@ def purchase_view(purchase_id):
     installments = installment_plan.installments if installment_plan else []
     installment_payments = installment_plan.payments if installment_plan else []
     sup = p.supplier
-    # سجل دفعات المورد الكامل (حساب تراكمي) لعرضه أسفل الفاتورة
-    supplier_payments = SupplierPayment.query.filter(
-        SupplierPayment.supplier_id == sup.id).order_by(SupplierPayment.date).all()
-    supp_total_paid = sup.total_paid()
+    # الدفعات التي تظهر داخل هذا الامر فقط: كل دفعة تظهر في آخر امر شراء
+    # تم انشاؤه قبل تسجيلها (من تاريخ هذا الامر حتى انشاء امر الشراء التالي)
+    supplier_payments = _purchase_window_payments(p)
+    supp_total_paid = sum(pay.amount or 0 for pay in supplier_payments)
     supp_balance = sup.balance()
 
     # اللقطة التراكمية الثابتة (مثل فاتورة المبيعات)
@@ -3118,6 +3282,27 @@ def api_item_price():
             'unit_price': item.unit_price if item else 0
         })
     return jsonify({'found': False})
+
+
+@app.route('/api/invoice-items')
+@login_required
+def api_invoice_items():
+    invoice_id = request.args.get('invoice_id', '').strip()
+    if not invoice_id or not invoice_id.isdigit():
+        return jsonify([])
+    inv = db.session.get(Invoice, int(invoice_id))
+    if not inv:
+        return jsonify([])
+    return jsonify([
+        {
+            'item_name': it.item_name or '',
+            'unit_type': it.unit_type or 'ق',
+            'unit_price': it.unit_price or 0,
+            'quantity': it.quantity or 0,
+            'total': it.total or 0
+        }
+        for it in inv.items
+    ])
 
 
 LOCK_TIMEOUT = 120

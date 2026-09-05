@@ -176,6 +176,10 @@ class Return(db.Model):
     balance_after = db.Column(db.Float, default=0)
     date = db.Column(db.DateTime, default=datetime.utcnow)
     reason = db.Column(db.Text)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    creator = db.relationship('User', foreign_keys=[created_by])
+    modified_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    modifier = db.relationship('User', foreign_keys=[modified_by])
     items = db.relationship('ReturnItem', backref='return_entry', lazy=True, cascade='all, delete-orphan')
 
 

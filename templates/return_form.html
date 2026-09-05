@@ -29,7 +29,7 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label><i class="fas fa-file-invoice" style="margin-left:4px;color:var(--gold);font-size:0.78rem;"></i> الفاتورة (اختياري)</label>
-                            <select name="invoice_id" class="form-control">
+                            <select name="invoice_id" class="form-control" onchange="loadInvoiceItems(this)">
                                 <option value="">-- بدون فاتورة --</option>
                                 {% for inv in invoices %}
                                 <option value="{{ inv.id }}" {% if ret and ret.invoice_id == inv.id %}selected{% endif %}>{{ inv.invoice_number }} - {{ inv.date.strftime('%Y-%m-%d') }}</option>
@@ -64,7 +64,10 @@
                         {% for it in ret.items %}
                         <div class="item-row invoice-row" data-index="{{ loop.index0 }}">
                             <span>{{ loop.index }}</span>
-                            <input type="text" name="item_name_{{ loop.index0 }}" class="form-control item-name-input" value="{{ it.item_name }}">
+                            <div class="autocomplete-wrap">
+                                <input type="text" name="item_name_{{ loop.index0 }}" class="form-control item-name-input" placeholder="اسم الصنف" autocomplete="off" value="{{ it.item_name }}">
+                                <div class="autocomplete-dropdown"></div>
+                            </div>
                             <input type="text" name="item_unit_{{ loop.index0 }}" class="unit-type-input item-unit" value="{{ it.unit_type or 'ق' }}" readonly>
                             <input type="number" name="item_qty_{{ loop.index0 }}" class="form-control item-qty" min="0" step="any" value="{{ it.quantity or 0 }}" oninput="calcRow(this)">
                             <input type="number" name="item_price_{{ loop.index0 }}" class="form-control item-price" min="0" step="any" value="{{ it.unit_price or 0 }}" oninput="calcRow(this)">
@@ -75,7 +78,10 @@
                         {% else %}
                         <div class="item-row invoice-row" data-index="0">
                             <span>1</span>
-                            <input type="text" name="item_name_0" class="form-control item-name-input" placeholder="اسم الصنف">
+                            <div class="autocomplete-wrap">
+                                <input type="text" name="item_name_0" class="form-control item-name-input" placeholder="اسم الصنف" autocomplete="off">
+                                <div class="autocomplete-dropdown"></div>
+                            </div>
                             <input type="text" name="item_unit_0" class="unit-type-input item-unit" value="ق" readonly>
                             <input type="number" name="item_qty_0" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)">
                             <input type="number" name="item_price_0" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this)">
@@ -124,10 +130,66 @@
     cursor: pointer;
     user-select: none;
 }
+.autocomplete-wrap { position: relative; }
+.autocomplete-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    background: #fff;
+    border: 1.5px solid var(--gold);
+    border-top: none;
+    border-radius: 0 0 var(--radius-xs) var(--radius-xs);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+    z-index: 50;
+    max-height: 220px;
+    overflow-y: auto;
+}
+.autocomplete-dropdown.show { display: block; }
+.autocomplete-item {
+    padding: 9px 14px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    color: var(--text);
+    border-bottom: 1px solid var(--border-light);
+    transition: background 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.autocomplete-item:last-child { border-bottom: none; }
+.autocomplete-item:hover,
+.autocomplete-item.active {
+    background: var(--gold-glow);
+    color: var(--gold-dark);
+}
+.autocomplete-item .item-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: var(--navy);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    flex-shrink: 0;
+}
+.autocomplete-empty {
+    padding: 12px 14px;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    text-align: center;
+}
 </style>
 
 <script>
 let rowIndex = {{ (ret.items|length - 1) if ret and ret.items else 0 }};
+var CUSTOMER_ID = {{ customer.id }};
+let searchTimeout = null;
+let activeDropdown = null;
+let activeIndex = -1;
 
 function bindTabNavigation(row) {
     var priceInput = row.querySelector('.item-price');
@@ -157,29 +219,99 @@ function bindUnitToggle(input) {
     });
 }
 
-function addRow(focusField) {
+function createRowDiv() {
     rowIndex++;
-    const container = document.getElementById('itemsBody');
     const div = document.createElement('div');
     div.className = 'item-row invoice-row';
     div.dataset.index = rowIndex;
     div.innerHTML = `
         <span>${rowIndex + 1}</span>
-        <input type="text" name="item_name_${rowIndex}" class="form-control item-name-input" placeholder="اسم الصنف">
+        <div class="autocomplete-wrap">
+            <input type="text" name="item_name_${rowIndex}" class="form-control item-name-input" placeholder="اسم الصنف" autocomplete="off">
+            <div class="autocomplete-dropdown"></div>
+        </div>
         <input type="text" name="item_unit_${rowIndex}" class="unit-type-input item-unit" value="ق" readonly>
         <input type="number" name="item_qty_${rowIndex}" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)">
         <input type="number" name="item_price_${rowIndex}" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this)">
         <span class="row-total">0</span>
         <button type="button" class="btn-remove" onclick="removeRow(this)">×</button>
     `;
-    container.appendChild(div);
+    return div;
+}
+
+function applyRowBindings(div) {
+    bindAutocomplete(div.querySelector('.item-name-input'));
     bindTabNavigation(div);
     bindUnitToggle(div.querySelector('.item-unit'));
     bindArrowNav(div);
+}
+
+function addRow(focusField) {
+    const div = createRowDiv();
+    document.getElementById('itemsBody').appendChild(div);
+    applyRowBindings(div);
     if (focusField === 'name') {
         const target = div.querySelector('.item-name-input');
         if (target) { setTimeout(function() { target.focus(); }, 0); }
     }
+    calcGrandTotal();
+}
+
+function hasEnteredItems() {
+    let entered = false;
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        const name = row.querySelector('.item-name-input').value.trim();
+        const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+        const price = parseFloat(row.querySelector('.item-price').value) || 0;
+        if (name || qty > 0 || price > 0) entered = true;
+    });
+    return entered;
+}
+
+function loadInvoiceItems(select) {
+    const container = document.getElementById('itemsBody');
+    const value = select.value;
+    if (hasEnteredItems() && value !== (select.dataset.prev || '')) {
+        if (!confirm('سيتم استبدال الاصناف المدخلة باصناف الفاتورة المختارة. هل تريد المتابعة؟')) {
+            select.value = select.dataset.prev || '';
+            return;
+        }
+    }
+    if (!value) {
+        if (!hasEnteredItems()) {
+            container.innerHTML = '';
+            const div = createRowDiv();
+            container.appendChild(div);
+            applyRowBindings(div);
+            renumber();
+            calcGrandTotal();
+        }
+        select.dataset.prev = '';
+        return;
+    }
+    fetch('/api/invoice-items?invoice_id=' + encodeURIComponent(value))
+        .then(r => r.json())
+        .then(items => {
+            container.innerHTML = '';
+            if (items.length === 0) {
+                const div = createRowDiv();
+                container.appendChild(div);
+                applyRowBindings(div);
+            } else {
+                items.forEach(it => {
+                    const div = createRowDiv();
+                    div.querySelector('.item-name-input').value = it.item_name;
+                    div.querySelector('.item-unit').value = it.unit_type || 'ق';
+                    div.querySelector('.item-qty').value = 0;
+                    div.querySelector('.item-price').value = it.unit_price || 0;
+                    container.appendChild(div);
+                    applyRowBindings(div);
+                });
+            }
+            renumber();
+            calcGrandTotal();
+        });
+    select.dataset.prev = value;
 }
 
 function removeRow(btn) {
@@ -224,13 +356,18 @@ function bindArrowNav(row) {
     var inputs = GRID_COLS_RETURN.map(function(sel) { return row.querySelector(sel); }).filter(Boolean);
     inputs.forEach(function(inp, idx) {
         inp.addEventListener('keydown', function(e) {
+            var wrap = inp.closest('.autocomplete-wrap');
+            var dropdownOpen = wrap && wrap.querySelector('.autocomplete-dropdown.show');
             if (e.key === 'ArrowRight' && idx < inputs.length - 1) {
+                if (dropdownOpen) return;
                 e.preventDefault();
                 focusTarget(inputs[idx + 1]);
             } else if (e.key === 'ArrowLeft' && idx > 0) {
+                if (dropdownOpen) return;
                 e.preventDefault();
                 focusTarget(inputs[idx - 1]);
             } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                if (dropdownOpen) return;
                 var allRows = Array.from(document.getElementById('itemsBody').querySelectorAll('.item-row'));
                 var rowIdx = allRows.indexOf(row);
                 if (e.key === 'ArrowDown' && rowIdx < allRows.length - 1) {
@@ -245,7 +382,111 @@ function bindArrowNav(row) {
     });
 }
 
+function bindAutocomplete(input) {
+    input.addEventListener('input', function() {
+        const wrap = this.closest('.autocomplete-wrap');
+        const dropdown = wrap.querySelector('.autocomplete-dropdown');
+        const query = this.value.trim();
+
+        if (activeDropdown && activeDropdown !== dropdown) {
+            activeDropdown.classList.remove('show');
+            activeDropdown.innerHTML = '';
+        }
+        activeDropdown = dropdown;
+        activeIndex = -1;
+
+        if (query.length < 1) {
+            dropdown.classList.remove('show');
+            dropdown.innerHTML = '';
+            return;
+        }
+
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(function() {
+            fetch('/api/search-items?q=' + encodeURIComponent(query))
+                .then(r => r.json())
+                .then(names => {
+                    if (names.length === 0) {
+                        dropdown.innerHTML = '<div class="autocomplete-empty">لا توجد اصناف مطابقة</div>';
+                        dropdown.classList.add('show');
+                        return;
+                    }
+                    dropdown.innerHTML = names.map((name, i) =>
+                        `<div class="autocomplete-item" data-index="${i}">
+                            <span class="item-icon"><i class="fas fa-box"></i></span>
+                            <span>${name}</span>
+                        </div>`
+                    ).join('');
+                    dropdown.classList.add('show');
+
+                    dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+                        item.addEventListener('mousedown', function(e) {
+                            e.preventDefault();
+                            const selectedName = this.querySelector('span:last-child').textContent;
+                            input.value = selectedName;
+                            dropdown.classList.remove('show');
+                            dropdown.innerHTML = '';
+                            fetchItemPrice(selectedName, input.closest('.item-row'));
+                            input.closest('.item-row').querySelector('.item-qty').focus();
+                        });
+                    });
+                });
+        }, 250);
+    });
+
+    input.addEventListener('keydown', function(e) {
+        const wrap = this.closest('.autocomplete-wrap');
+        const dropdown = wrap.querySelector('.autocomplete-dropdown');
+        const items = dropdown.querySelectorAll('.autocomplete-item');
+
+        if (!dropdown.classList.contains('show') || items.length === 0) return;
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            activeIndex = Math.min(activeIndex + 1, items.length - 1);
+            items.forEach((it, i) => it.classList.toggle('active', i === activeIndex));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            activeIndex = Math.max(activeIndex - 1, 0);
+            items.forEach((it, i) => it.classList.toggle('active', i === activeIndex));
+        } else if (e.key === 'Enter' && activeIndex >= 0) {
+            e.preventDefault();
+            const selected = items[activeIndex];
+            const selectedName = selected.querySelector('span:last-child').textContent;
+            this.value = selectedName;
+            dropdown.classList.remove('show');
+            dropdown.innerHTML = '';
+            fetchItemPrice(selectedName, this.closest('.item-row'));
+            this.closest('.item-row').querySelector('.item-qty').focus();
+        }
+    });
+
+    input.addEventListener('blur', function() {
+        setTimeout(() => {
+            const wrap = this.closest('.autocomplete-wrap');
+            if (wrap) {
+                wrap.querySelector('.autocomplete-dropdown').classList.remove('show');
+            }
+        }, 200);
+    });
+}
+
+function fetchItemPrice(name, row) {
+    fetch('/api/item-price?name=' + encodeURIComponent(name) + '&customer_id=' + encodeURIComponent(CUSTOMER_ID || ''))
+        .then(r => r.json())
+        .then(data => {
+            if (data.found && data.selling_price > 0) {
+                const priceInput = row.querySelector('.item-price');
+                if (priceInput && !priceInput.value) {
+                    priceInput.value = data.selling_price;
+                    calcRow(priceInput);
+                }
+            }
+        });
+}
+
 document.querySelectorAll('#itemsBody .item-row').forEach(function(row) {
+    bindAutocomplete(row.querySelector('.item-name-input'));
     bindTabNavigation(row);
     bindUnitToggle(row.querySelector('.item-unit'));
     bindArrowNav(row);
