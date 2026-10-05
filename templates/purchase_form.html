@@ -159,10 +159,10 @@
                                 <input type="text" name="item_name_{{ loop.index0 }}" class="form-control item-name-input" placeholder="اسم الصنف" autocomplete="off" value="{{ item.item_name }}">
                                 <div class="autocomplete-dropdown"></div>
                             </div>
-                            <input type="number" name="item_qty_{{ loop.index0 }}" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)" value="{{ item.quantity }}">
+                            <input type="number" name="item_qty_{{ loop.index0 }}" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)" value="{{ item.quantity|qty }}">
                             <input type="text" name="item_unit_{{ loop.index0 }}" class="unit-type-input item-unit" value="{{ item.unit_type or 'ق' }}" readonly>
-                            <input type="number" name="item_price_{{ loop.index0 }}" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this); clearRowError(this)" value="{{ item.unit_price }}">
-                            <input type="number" name="item_sell_price_{{ loop.index0 }}" class="form-control item-sell-price" min="0" step="any" placeholder="0" value="{{ item.selling_price }}">
+                            <input type="number" name="item_price_{{ loop.index0 }}" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this); clearRowError(this)" value="{{ item.unit_price|qty }}">
+                            <input type="number" name="item_sell_price_{{ loop.index0 }}" class="form-control item-sell-price" min="0" step="any" placeholder="0" value="{{ item.selling_price|qty }}">
                             <span class="row-total">{{ "{:,.0f}".format(item.total or 0) }}</span>
                             <button type="button" class="btn-remove" onclick="removeRow(this)">×</button>
                         </div>
@@ -867,6 +867,10 @@ function togglePaymentFields() {
     } else if (pt === 'cash') {
         pmGroup.style.display = '';
         dpGroup.style.display = 'none';
+        instFields.style.display = 'none';
+    } else if (pt === 'credit') {
+        pmGroup.style.display = 'none';
+        dpGroup.style.display = '';
         instFields.style.display = 'none';
     } else {
         pmGroup.style.display = 'none';

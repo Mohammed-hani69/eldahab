@@ -405,6 +405,18 @@ def delete_receipt_image(fname):
             pass
 
 
+@app.template_filter('qty')
+def format_qty(value):
+    """عرض الكمية/السعر بدون '.0': 24.0 -> 24 و 5.6 -> 5.6 (عرض فقط بدون تأثير على الحسابات)."""
+    try:
+        num = float(value or 0)
+    except (TypeError, ValueError):
+        return value
+    if num == int(num):
+        return '{:,}'.format(int(num))
+    return '{:,}'.format(num).rstrip('0').rstrip('.')
+
+
 def parse_images(value):
     """تفسير قيمة صور الايصال: JSON array (جديدة) او اسم ملف واحد (قديمة)."""
     if not value:
@@ -3224,10 +3236,10 @@ def api_search_items():
         return jsonify([])
     items = db.session.query(InvoiceItem.item_name).distinct().filter(
         InvoiceItem.item_name.like(f'%{q}%')
-    ).limit(15).all()
+    ).all()
     purchase_items = db.session.query(PurchaseItem.item_name).distinct().filter(
         PurchaseItem.item_name.like(f'%{q}%')
-    ).limit(15).all()
+    ).all()
     all_names = set()
     for row in items:
         all_names.add(row[0])

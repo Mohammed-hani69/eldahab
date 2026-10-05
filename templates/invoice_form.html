@@ -166,9 +166,9 @@
                                 <input type="text" name="item_name_{{ loop.index0 }}" class="form-control item-name-input" placeholder="اسم الصنف" autocomplete="off" value="{{ item.item_name }}">
                                 <div class="autocomplete-dropdown"></div>
                             </div>
-                            <input type="number" name="item_qty_{{ loop.index0 }}" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)" value="{{ item.quantity }}">
+                            <input type="number" name="item_qty_{{ loop.index0 }}" class="form-control item-qty" min="0" step="any" placeholder="0" oninput="calcRow(this)" value="{{ item.quantity|qty }}">
                             <input type="text" name="item_unit_{{ loop.index0 }}" class="unit-type-input item-unit" value="{{ item.unit_type or 'ق' }}" readonly>
-                            <input type="number" name="item_price_{{ loop.index0 }}" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this); clearRowError(this)" value="{{ item.unit_price }}">
+                            <input type="number" name="item_price_{{ loop.index0 }}" class="form-control item-price" min="0" step="any" placeholder="0" oninput="calcRow(this); clearRowError(this)" value="{{ item.unit_price|qty }}">
                             <span class="row-total">{{ "{:,.0f}".format(item.total or 0) }}</span>
                             <button type="button" class="btn-remove" onclick="removeRow(this)">x</button>
                         </div>

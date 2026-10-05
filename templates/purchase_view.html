@@ -73,13 +73,13 @@
         <table class="compact-table invoice-items-table">
             <thead>
                 <tr>
-                    <th style="width:50px;">#</th>
+                    <th style="width:40px;">#</th>
                     <th>اسم الصنف</th>
-                    <th style="width:90px;">الكمية</th>
-                    <th style="width:60px;">الفئة</th>
-                    <th style="width:130px;">سعر الشراء</th>
-                    <th style="width:130px;">سعر البيع</th>
-                    <th style="width:140px;">الاجمالي</th>
+                    <th style="width:70px;">الكمية</th>
+                    <th style="width:50px;">الفئة</th>
+                    <th style="width:92px;">سعر الشراء</th>
+                    <th style="width:92px;" class="col-selling">سعر البيع</th>
+                    <th style="width:108px;">الاجمالي</th>
                 </tr>
             </thead>
             <tbody>
@@ -87,10 +87,10 @@
                 <tr class="{% if loop.index % 20 == 0 and not loop.last %}page-break-row{% endif %}">
                     <td class="item-cell">{{ loop.index }}</td>
                     <td class="item-cell" style="font-weight:700;">{{ item.item_name }}</td>
-                    <td class="item-cell" style="text-align:center;">{{ item.quantity }}</td>
+                    <td class="item-cell" style="text-align:center;">{{ item.quantity|qty }}</td>
                     <td class="item-cell" style="text-align:center;">{{ item.unit_type or 'ق' }}</td>
                     <td class="item-cell">{{ "{:,.0f}".format(item.unit_price or 0) }}</td>
-                    <td class="item-cell">{{ "{:,.0f}".format(item.selling_price or 0) }}</td>
+                    <td class="item-cell col-selling">{{ "{:,.0f}".format(item.selling_price or 0) }}</td>
                     <td class="item-cell" style="font-weight:800;">{{ "{:,.0f}".format(item.total or 0) }}</td>
                 </tr>
                 {% endfor %}
@@ -132,7 +132,7 @@
                     <tr>
                         <td>{{ loop.index }}</td>
                         <td>{{ ritem.item_name }}</td>
-                        <td>{{ ritem.quantity }}</td>
+                        <td>{{ ritem.quantity|qty }}</td>
                         <td style="text-align:center;">{{ ritem.unit_type or 'ق' }}</td>
                         <td>{{ "{:,.0f}".format(ritem.unit_price or 0) }}</td>
                         <td style="color:#dc3545;font-weight:800;">{{ "{:,.0f}".format(ritem.total or 0) }} ج.م</td>
@@ -341,9 +341,11 @@
 .compact-table tbody tr:nth-child(even) { background: #f7f9fc; }
 .compact-table tbody tr:hover { background: rgba(207,163,64,0.06); }
 
+.invoice-items-table { table-layout: fixed; }
 .invoice-items-table .item-cell {
     font-size: 0.95rem;
     padding: 9px 12px;
+    overflow-wrap: anywhere;
 }
 
 .invoice-meta-row {
@@ -505,6 +507,8 @@
         print-color-adjust: exact;
     }
     .invoice-items-table .item-cell { font-size: 0.88rem !important; }
+    /* إخفاء عمود سعر البيع عند الطباعة فقط */
+    .invoice-items-table .col-selling { display: none !important; }
 
     .compact-total { padding: 8px 12px !important; }
     .compact-total .total-label { font-size: 0.82rem !important; color: #000 !important; }

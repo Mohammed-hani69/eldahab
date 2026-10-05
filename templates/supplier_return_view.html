@@ -57,7 +57,7 @@
                 <tr class="{% if loop.index % 20 == 0 and not loop.last %}page-break-row{% endif %}">
                     <td class="item-cell">{{ loop.index }}</td>
                     <td class="item-cell" style="font-weight:700;">{{ item.item_name }}</td>
-                    <td class="item-cell" style="text-align:center;">{{ item.quantity }}</td>
+                    <td class="item-cell" style="text-align:center;">{{ item.quantity|qty }}</td>
                     <td class="item-cell" style="text-align:center;">{{ item.unit_type or 'ق' }}</td>
                     <td class="item-cell">{{ "{:,.0f}".format(item.unit_price or 0) }}</td>
                     <td class="item-cell" style="font-weight:800;">{{ "{:,.0f}".format(item.total or 0) }} ج.م</td>
