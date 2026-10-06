@@ -1487,17 +1487,8 @@ def invoice_edit(invoice_id):
             inv.paid_amount = want_down
             inv.remaining = max(0, net - want_down)
 
-        # اعادة حساب اللقطة التراكمية الثابتة عند التعديل
-        # حفظ previous_due الحالي (الثابت) وبناء balance_after عليه
-        cur_prev = inv.previous_due if inv.previous_due is not None else 0
-        if cur_prev == 0:
-            prev_inv_edit = Invoice.query.filter(
-                Invoice.customer_id == inv.customer_id,
-                Invoice.id != inv.id
-            ).order_by(Invoice.id.desc()).first()
-            cur_prev = (prev_inv_edit.balance_after if prev_inv_edit and prev_inv_edit.balance_after else 0) or 0
-        inv.previous_due = max(0, cur_prev)
-        # مستحقات الفاتورة قيمة ثابتة = المستحق السابق + قيمة الفاتورة - مقدم الدفع
+        # Rebuild the historical snapshot from account movements, not an older snapshot.
+        inv.previous_due = _customer_balance_before(inv.customer_id, inv.date, exclude_id=inv.id)
         inv.balance_after = max(0, round((inv.previous_due or 0) + net - (inv.paid_amount or 0), 2))
 
         if new_ptype == 'installment':
@@ -3148,18 +3139,24 @@ def api_customer_balance():
     c = Customer.query.get(customer_id)
     if not c:
         return jsonify({'total_remaining': 0, 'invoices': []})
+    # Allocate current account credits to the oldest open invoices first. Stored
+    # balance_after values are historical snapshots and become stale after edits.
+    available_credits = c.total_paid() + c.total_returns()
     result = []
     for inv in Invoice.query.filter(
         Invoice.customer_id == c.id,
         Invoice.is_returned == False
-    ).order_by(Invoice.id).all():
-        fixed_due = max(0, inv.balance_after or 0)
-        if fixed_due > 0:
+    ).order_by(Invoice.date, Invoice.id).all():
+        net = max(0, (inv.total or 0) - (inv.discount or 0))
+        applied_credits = min(net, available_credits)
+        available_credits -= applied_credits
+        remaining = max(0, net - applied_credits)
+        if remaining > 0:
             result.append({
                 'invoice_number': inv.invoice_number,
-                'total': max(0, (inv.total or 0) - (inv.discount or 0)),
-                'paid': inv.paid_amount or 0,
-                'remaining': fixed_due
+                'total': net,
+                'paid': applied_credits,
+                'remaining': remaining
             })
     return jsonify({'total_remaining': round(max(0, c.balance()), 2), 'invoices': result})
 

@@ -36,7 +36,7 @@
             <span style="font-size:0.78rem;font-weight:700;">المتبقي: {{ "{:,.0f}".format(invoice.remaining or 0) }} ج.م</span>
             {% elif invoice.payment_type == 'installment' %}
             <span class="badge badge-info"><i class="fas fa-calendar-check" style="margin-left:2px;"></i> تقسيط</span>
-            <span style="font-size:0.78rem;">المقدم: {{ "{:,.0f}".format(invoice.paid_amount or 0) }} ج.م | المتبقي: {{ "{:,.0f}".format(invoice.remaining or 0) }} ج.م</span>
+            <span style="font-size:0.78rem;">المقدم: {{ (invoice.paid_amount or 0)|qty }} ج.م | المتبقي: {{ (invoice.remaining or 0)|qty }} ج.م</span>
             {% endif %}
             {% if invoice.payment_type in ('cash', 'installment') and PAYMENT_METHODS.get(invoice.payment_method) %}
             <span style="font-size:0.78rem;color:var(--text-secondary);">| طريقة الدفع:</span>
@@ -88,8 +88,8 @@
                     <td class="item-cell" style="font-weight:700;">{{ item.item_name }}</td>
                     <td class="item-cell" style="text-align:center;">{{ item.quantity|qty }}</td>
                     <td class="item-cell" style="text-align:center;">{{ item.unit_type or 'ق' }}</td>
-                    <td class="item-cell">{{ "{:,.0f}".format(item.unit_price or 0) }}</td>
-                    <td class="item-cell" style="font-weight:800;">{{ "{:,.0f}".format(item.total or 0) }}</td>
+                    <td class="item-cell">{{ item.unit_price|qty }}</td>
+                    <td class="item-cell" style="font-weight:800;">{{ (item.total or 0)|qty }}</td>
                 </tr>
                 {% endfor %}
                 {% if not invoice.items %}
@@ -124,9 +124,9 @@
 
         {% if invoice.discount and invoice.discount > 0 %}
         <div class="discount-bar">
-            <div><span class="d-label">الاجمالي</span><span class="d-cross">{{ "{:,.0f}".format(invoice.total or 0) }} ج.م</span></div>
-            <div style="color:#fbb;"><i class="fas fa-percentage" style="font-size:0.7rem;"></i><span style="font-weight:700;"> {{ "{:,.0f}".format(invoice.discount) }} ج.م</span></div>
-            <div><span class="d-label">الصافي</span><span class="d-net">{{ "{:,.0f}".format(inv_net) }} ج.م</span></div>
+            <div><span class="d-label">الاجمالي</span><span class="d-cross">{{ (invoice.total or 0)|qty }} ج.م</span></div>
+            <div style="color:#fbb;"><i class="fas fa-percentage" style="font-size:0.7rem;"></i><span style="font-weight:700;"> {{ (invoice.discount or 0)|qty }} ج.م</span></div>
+            <div><span class="d-label">الصافي</span><span class="d-net">{{ inv_net|qty }} ج.م</span></div>
         </div>
         {% endif %}
 
@@ -134,24 +134,24 @@
             {% if show_bal %}
             <div class="grand-total compact-total total-box total-dues">
                 <span class="total-label"><i class="fas fa-clock-rotate-left" style="margin-left:4px;"></i> آخر المستحقات</span>
-                <span class="total-value">{{ "{:,.0f}".format(previous_dues) }} ج.م</span>
+                <span class="total-value">{{ previous_dues|qty }} ج.م</span>
             </div>
             <div class="grand-total compact-total total-box total-invoice">
                 <span class="total-label">إجمالي الفاتورة</span>
-                <span class="total-value">{{ "{:,.0f}".format(inv_net) }} ج.م</span>
+                <span class="total-value">{{ inv_net|qty }} ج.م</span>
             </div>
             <div class="grand-total compact-total total-box total-invoice total-paid">
                 <span class="total-label">مقدم الدفع</span>
-                <span class="total-value">{{ "{:,.0f}".format(invoice.paid_amount or 0) }} ج.م</span>
+                <span class="total-value">{{ (invoice.paid_amount or 0)|qty }} ج.م</span>
             </div>
             <div class="grand-total compact-total total-box total-grand">
                 <span class="total-label"><i class="fas fa-exclamation-triangle" style="margin-left:4px;"></i> إجمالي المستحقات</span>
-                <span class="total-value">{{ "{:,.0f}".format(balance_after) }} ج.م</span>
+                <span class="total-value">{{ balance_after|qty }} ج.م</span>
             </div>
             {% else %}
             <div class="grand-total compact-total total-box total-invoice">
                 <span class="total-label">الاجمالي الكلي</span>
-                <span class="total-value">{{ "{:,.0f}".format(inv_net) }} ج.م</span>
+                <span class="total-value">{{ inv_net|qty }} ج.م</span>
             </div>
             {% endif %}
         </div>
