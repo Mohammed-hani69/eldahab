@@ -462,18 +462,20 @@ def generate_supplier_plan_number():
 
 
 def _customer_balance_before(customer_id, before_date, exclude_id=None):
-    """المستحق الفعلي على العميل قبل تاريخ معين (قبل اضافة فاتورة جديدة).
+    """المستحق الفعلي على العميل قبل فاتورة/حركة معينة.
 
-    يعيد نفس منهج حساب رصيد العميل في البروفايل (total_invoiced - total_paid
-    - total_returns) مع قصر الحساب على الحركات التي حدثت قبل before_date فقط،
-    حتى تكون قيمة 'آخر المستحقات' المسجلة في الفاتورة مساوية لرصيد البروفايل
-    قبل اضافة اجمالي الفاتورة الحالية.
+    ترتيب الحركات يعتمد على التاريخ ثم رقم الفاتورة، وليس اللقطات المحفوظة
+    السابقة، حتى لا يظهر مستحق قديم بعد تعديل فاتورة في نفس اليوم أو يوم سابق.
     """
-    invs = Invoice.query.filter(
+    all_invs = Invoice.query.filter(
         Invoice.customer_id == customer_id,
-        Invoice.id != exclude_id,
-        Invoice.date < before_date
+        Invoice.id != exclude_id
     ).all()
+    invs = [
+        i for i in all_invs
+        if i.date < before_date or
+        (i.date == before_date and exclude_id is not None and i.id < exclude_id)
+    ]
     total_invoiced = sum(
         (i.total or 0) - (i.discount or 0)
         for i in invs if not i.is_returned
@@ -571,6 +573,15 @@ def _supplier_balance_before(supplier_id, before_date, exclude_id=None):
     )
     balance = total_purchased - sum_payments - sum_inst - sum_pur_paid - sum_returns
     return max(0, round(balance, 2))
+
+
+def _rebuild_customer_invoice_snapshots(customer_id):
+    """إعادة بناء لقطة المستحق لكل فواتير العميل بعد أي تعديل في فاتورة."""
+    invoices = Invoice.query.filter_by(customer_id=customer_id).order_by(Invoice.date.asc(), Invoice.id.asc()).all()
+    for inv in invoices:
+        inv.previous_due = _customer_balance_before(customer_id, inv.date, exclude_id=inv.id)
+        net = max(0, (inv.total or 0) - (inv.discount or 0))
+        inv.balance_after = max(0, round((inv.previous_due or 0) + net - (inv.paid_amount or 0), 2))
 
 
 def _next_invoice_date(customer_id, inv_date):
@@ -1371,6 +1382,7 @@ def invoice_add():
                 plan.down_payment = down
                 plan.remaining = remaining_amount
 
+        _rebuild_customer_invoice_snapshots(inv.customer_id)
         db.session.commit()
         customer_id = int(request.form['customer_id'])
         EntityLock.query.filter_by(entity_type='customer', entity_id=customer_id, user_id=session['user_id']).delete()
@@ -1562,6 +1574,7 @@ def invoice_edit(invoice_id):
                 Installment.query.filter_by(plan_id=plan.id).delete()
                 db.session.delete(plan)
 
+        _rebuild_customer_invoice_snapshots(inv.customer_id)
         db.session.commit()
         flash(f'تم تعديل الفاتورة {inv.invoice_number} بنجاح', 'success')
         return redirect(url_for('invoice_view', invoice_id=inv.id))
@@ -1584,10 +1597,13 @@ def invoice_view(invoice_id):
     customer_payments = _invoice_window_payments(inv)
     cust_total_paid = sum(p.amount or 0 for p in customer_payments)
     cust_balance = cust.balance()
-    # للمستحقات المعروضة في الفاتورة نستخدم اللقطة الثابتة المحفوظة وقت الانشاء
-    # وليس الحساب العام الحالي — حتى لا تتغير الفواتير القديمة
-    prev_saved = inv.previous_due if inv.previous_due is not None else 0
-    after_saved = inv.balance_after if inv.balance_after is not None else 0
+    # الحساب المعروض يعاد بناءه من الحركات الفعلية عند فتح الفاتورة، حتى
+    # لا تستمر اللقطة القديمة بعد تعديل/حذف فاتورة أو حركة سابقة.
+    prev_saved = _customer_balance_before(inv.customer_id, inv.date, exclude_id=inv.id)
+    inv.previous_due = prev_saved
+    net = max(0, (inv.total or 0) - (inv.discount or 0))
+    after_saved = max(0, round(prev_saved + net - (inv.paid_amount or 0), 2))
+    inv.balance_after = after_saved
     return render_template('invoice_view.html', invoice=inv,
         installment_plan=installment_plan, installments=installments,
         installment_payments=installment_payments, PAYMENT_TYPES=PAYMENT_TYPES,
@@ -1601,6 +1617,7 @@ def invoice_view(invoice_id):
 @login_required
 def invoice_delete(invoice_id):
     inv = Invoice.query.get_or_404(invoice_id)
+    customer_id = inv.customer_id
     plan = InstallmentPlan.query.filter_by(invoice_id=inv.id).first()
     if plan:
         InstallmentPayment.query.filter_by(plan_id=plan.id).delete()
@@ -1613,6 +1630,8 @@ def invoice_delete(invoice_id):
     Return.query.filter_by(invoice_id=inv.id).delete()
     Payment.query.filter_by(invoice_id=inv.id).update({'invoice_id': None})
     db.session.delete(inv)
+    db.session.flush()
+    _rebuild_customer_invoice_snapshots(customer_id)
     db.session.commit()
     flash('تم حذف الفاتورة بنجاح', 'success')
     return redirect(url_for('invoices_list'))
