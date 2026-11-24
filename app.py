@@ -575,6 +575,18 @@ def _supplier_balance_before(supplier_id, before_date, exclude_id=None):
     return max(0, round(balance, 2))
 
 
+def _rebuild_supplier_purchase_snapshots(supplier_id):
+    """توحيد إجمالي المستحق في كل أوامر الشراء مع الرصيد الحالي للمورد."""
+    supplier = Supplier.query.get(supplier_id)
+    if not supplier:
+        return
+    current_balance = max(0, round(supplier.balance(), 2))
+    purchases = Purchase.query.filter_by(supplier_id=supplier_id).order_by(Purchase.date.asc(), Purchase.id.asc()).all()
+    for pur in purchases:
+        pur.previous_due = _supplier_balance_before(supplier_id, pur.date, exclude_id=pur.id)
+        pur.balance_after = current_balance
+
+
 def _rebuild_customer_invoice_snapshots(customer_id):
     """توحيد إجمالي المستحق في كل فواتير العميل مع الرصيد الحالي للعميل."""
     customer = Customer.query.get(customer_id)
@@ -591,6 +603,8 @@ def _rebuild_customer_invoice_snapshots(customer_id):
 with app.app_context():
     for customer_id in [row[0] for row in db.session.query(Customer.id).all()]:
         _rebuild_customer_invoice_snapshots(customer_id)
+    for supplier_id in [row[0] for row in db.session.query(Supplier.id).all()]:
+        _rebuild_supplier_purchase_snapshots(supplier_id)
     db.session.commit()
 
 
@@ -1959,6 +1973,7 @@ def supplier_return_add(supplier_id):
         bal_now = s.balance()
         r.balance_before = bal_now + total
         r.balance_after = bal_now
+        _rebuild_supplier_purchase_snapshots(s.id)
         db.session.commit()
         flash('تم تسجيل مرتجع المورد بنجاح', 'success')
         return redirect(url_for('supplier_profile', supplier_id=s.id))
@@ -2007,6 +2022,7 @@ def supplier_return_edit(supplier_id, return_id):
         r.total_amount = total
         r.balance_before = s.balance() + total
         r.balance_after = s.balance()
+        _rebuild_supplier_purchase_snapshots(s.id)
         db.session.commit()
         flash('تم تعديل مرتجع المورد بنجاح', 'success')
         return redirect(url_for('supplier_profile', supplier_id=s.id))
@@ -2019,6 +2035,8 @@ def supplier_return_delete(supplier_id, return_id):
     s = Supplier.query.get_or_404(supplier_id)
     r = SupplierReturn.query.filter_by(id=return_id, supplier_id=s.id).first_or_404()
     db.session.delete(r)
+    db.session.flush()
+    _rebuild_supplier_purchase_snapshots(supplier_id)
     db.session.commit()
     flash('تم حذف مرتجع المورد بنجاح', 'success')
     return redirect(url_for('supplier_profile', supplier_id=s.id))
@@ -2200,6 +2218,7 @@ def supplier_installment_pay(plan_id):
                 ).filter(SupplierInstallmentPayment.plan_id == plan.id).scalar()
                 pur.remaining = max(0, (pur.total or 0) - total_paid_pur)
 
+        _rebuild_supplier_purchase_snapshots(plan.supplier_id)
         db.session.commit()
         flash('تم تسجيل الدفعة بنجاح', 'success')
         return redirect(url_for('supplier_installment_view', plan_id=plan.id))
@@ -2405,6 +2424,8 @@ def supplier_payment_add(supplier_id):
             created_by=session.get('user_id')
         )
         db.session.add(p)
+        db.session.flush()
+        _rebuild_supplier_purchase_snapshots(s.id)
         db.session.commit()
         flash('تم تسجيل الدفعة بنجاح', 'success')
         return redirect(url_for('supplier_profile', supplier_id=s.id))
@@ -2431,6 +2452,7 @@ def supplier_payment_edit(payment_id):
         if new_receipt:
             delete_receipt_image(p.receipt_image)
             p.receipt_image = new_receipt
+        _rebuild_supplier_purchase_snapshots(s.id)
         db.session.commit()
         flash('تم تعديل الدفعة بنجاح', 'success')
         return redirect(url_for('supplier_profile', supplier_id=s.id))
@@ -2446,6 +2468,8 @@ def supplier_payment_delete(payment_id):
     if p.receipt_image:
         delete_receipt_image(p.receipt_image)
     db.session.delete(p)
+    db.session.flush()
+    _rebuild_supplier_purchase_snapshots(s_id)
     db.session.commit()
     flash('تم حذف الدفعة بنجاح', 'success')
     return redirect(url_for('supplier_profile', supplier_id=s_id))
@@ -2611,6 +2635,8 @@ def purchase_add():
                 plan.down_payment = down
                 plan.remaining = remaining_amount
 
+        db.session.flush()
+        _rebuild_supplier_purchase_snapshots(p.supplier_id)
         db.session.commit()
         supplier_id = int(request.form['supplier_id'])
         EntityLock.query.filter_by(entity_type='supplier', entity_id=supplier_id, user_id=session['user_id']).delete()
@@ -2639,25 +2665,11 @@ def purchase_view(purchase_id):
     supp_total_paid = sum(pay.amount or 0 for pay in supplier_payments)
     supp_balance = sup.balance()
 
-    # اللقطة التراكمية الثابتة (مثل فاتورة المبيعات)
-    prev_saved = p.previous_due if p.previous_due is not None else 0
-    after_saved = p.balance_after if p.balance_after is not None else 0
-    if prev_saved == 0 and after_saved == 0:
-        # fallback للفواتير القديمة المحسوبة يدوياً كمجموع تراكمي للمستحق
-        sup_total = 0
-        rem_this = 0
-        prev_pur_old = Purchase.query.filter(
-            Purchase.supplier_id == p.supplier_id,
-            Purchase.id < p.id
-        ).all()
-        for pp in prev_pur_old:
-            net = max(0, (pp.total or 0) - (pp.paid_amount or 0))
-            sup_total += net
-        this_net = max(0, (p.total or 0) - (p.paid_amount or 0))
-        rem_this = this_net
-        if sup_total > 0 or rem_this > 0:
-            prev_saved = max(0, round(sup_total, 2))
-            after_saved = max(0, round(sup_total + this_net, 2))
+    # المستحق المعروض في أمر الشراء يساوي رصيد المورد النهائي الحالي.
+    prev_saved = _supplier_balance_before(p.supplier_id, p.date, exclude_id=p.id)
+    p.previous_due = prev_saved
+    after_saved = max(0, round(supp_balance, 2))
+    p.balance_after = after_saved
 
     return render_template('purchase_view.html', purchase=p,
         return_items=return_items, return_amount=return_amount,
@@ -2836,6 +2848,7 @@ def purchase_edit(purchase_id):
                 SupplierInstallment.query.filter_by(plan_id=plan_del.id).delete()
                 db.session.delete(plan_del)
 
+        _rebuild_supplier_purchase_snapshots(p.supplier_id)
         db.session.commit()
         EntityLock.query.filter_by(entity_type='supplier', entity_id=p.supplier_id, user_id=session['user_id']).delete()
         db.session.commit()
@@ -2862,7 +2875,10 @@ def purchase_delete(purchase_id):
     )).delete(synchronize_session='fetch')
     SupplierReturn.query.filter_by(purchase_id=p.id).delete()
     SupplierPayment.query.filter_by(purchase_id=p.id).update({'purchase_id': None})
+    supplier_id = p.supplier_id
     db.session.delete(p)
+    db.session.flush()
+    _rebuild_supplier_purchase_snapshots(supplier_id)
     db.session.commit()
     flash('تم حذف امر الشراء بنجاح', 'success')
     return redirect(url_for('purchases_list'))
