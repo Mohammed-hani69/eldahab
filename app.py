@@ -576,12 +576,22 @@ def _supplier_balance_before(supplier_id, before_date, exclude_id=None):
 
 
 def _rebuild_customer_invoice_snapshots(customer_id):
-    """إعادة بناء لقطة المستحق لكل فواتير العميل بعد أي تعديل في فاتورة."""
+    """توحيد إجمالي المستحق في كل فواتير العميل مع الرصيد الحالي للعميل."""
+    customer = Customer.query.get(customer_id)
+    if not customer:
+        return
+    current_balance = max(0, round(customer.balance(), 2))
     invoices = Invoice.query.filter_by(customer_id=customer_id).order_by(Invoice.date.asc(), Invoice.id.asc()).all()
     for inv in invoices:
         inv.previous_due = _customer_balance_before(customer_id, inv.date, exclude_id=inv.id)
-        net = max(0, (inv.total or 0) - (inv.discount or 0))
-        inv.balance_after = max(0, round((inv.previous_due or 0) + net - (inv.paid_amount or 0), 2))
+        inv.balance_after = current_balance
+
+
+# تصحيح لقطة البيانات القديمة عند تشغيل التطبيق من دون أي تغيير في واجهة الموقع
+with app.app_context():
+    for customer_id in [row[0] for row in db.session.query(Customer.id).all()]:
+        _rebuild_customer_invoice_snapshots(customer_id)
+    db.session.commit()
 
 
 def _next_invoice_date(customer_id, inv_date):
@@ -1601,8 +1611,7 @@ def invoice_view(invoice_id):
     # لا تستمر اللقطة القديمة بعد تعديل/حذف فاتورة أو حركة سابقة.
     prev_saved = _customer_balance_before(inv.customer_id, inv.date, exclude_id=inv.id)
     inv.previous_due = prev_saved
-    net = max(0, (inv.total or 0) - (inv.discount or 0))
-    after_saved = max(0, round(prev_saved + net - (inv.paid_amount or 0), 2))
+    after_saved = max(0, round(cust.balance(), 2))
     inv.balance_after = after_saved
     return render_template('invoice_view.html', invoice=inv,
         installment_plan=installment_plan, installments=installments,
@@ -1681,6 +1690,8 @@ def payment_add(customer_id):
             next_payment_amount=float(request.form['next_payment_amount']) if request.form.get('next_payment_amount') else None
         )
         db.session.add(p)
+        db.session.flush()
+        _rebuild_customer_invoice_snapshots(c.id)
         db.session.commit()
         flash('تم تسجيل الدفعة بنجاح', 'success')
         return redirect(url_for('customer_profile', customer_id=c.id))
@@ -1714,6 +1725,7 @@ def payment_edit(payment_id):
         p.next_payment_date = datetime.strptime(request.form['next_payment_date'], '%Y-%m-%d').date() if request.form.get('next_payment_date') else None
         p.next_payment_amount = float(request.form['next_payment_amount']) if request.form.get('next_payment_amount') else None
 
+        _rebuild_customer_invoice_snapshots(c.id)
         db.session.commit()
         flash('تم تعديل الدفعة بنجاح', 'success')
         return redirect(url_for('customer_profile', customer_id=c.id))
@@ -1732,6 +1744,8 @@ def payment_delete(payment_id):
         delete_receipt_image(fname)
 
     db.session.delete(p)
+    db.session.flush()
+    _rebuild_customer_invoice_snapshots(cid)
     db.session.commit()
     flash('تم حذف الدفعة بنجاح', 'success')
     # اذا تم الحذف من صفحة الفاتورة ارجع اليها، والا ارجع لصفحة العميل
@@ -1802,6 +1816,7 @@ def return_add(customer_id):
         bal_now = c.balance()
         r.balance_before = bal_now + total
         r.balance_after = bal_now
+        _rebuild_customer_invoice_snapshots(c.id)
         db.session.commit()
         flash('تم تسجيل المرتجع بنجاح', 'success')
         return redirect(url_for('customer_profile', customer_id=c.id))
@@ -1852,6 +1867,7 @@ def return_edit(customer_id, return_id):
         # لقطة الرصيد قبل/بعد المرتجع
         r.balance_before = c.balance() + total
         r.balance_after = c.balance()
+        _rebuild_customer_invoice_snapshots(c.id)
         db.session.commit()
         flash('تم تعديل المرتجع بنجاح', 'success')
         return redirect(url_for('customer_profile', customer_id=c.id))
@@ -1891,6 +1907,8 @@ def return_delete(customer_id, return_id):
     c = Customer.query.get_or_404(customer_id)
     r = Return.query.filter_by(id=return_id, customer_id=c.id).first_or_404()
     db.session.delete(r)
+    db.session.flush()
+    _rebuild_customer_invoice_snapshots(customer_id)
     db.session.commit()
     flash('تم حذف المرتجع بنجاح', 'success')
     return redirect(url_for('customer_profile', customer_id=c.id))
@@ -2099,6 +2117,7 @@ def installment_pay(plan_id):
         elif plan.remaining <= 0:
             plan.status = 'completed'
 
+        _rebuild_customer_invoice_snapshots(plan.customer_id)
         db.session.commit()
         flash('تم تسجيل الدفعة بنجاح', 'success')
         return redirect(url_for('installment_view', plan_id=plan.id))
